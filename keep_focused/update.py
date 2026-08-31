@@ -159,7 +159,28 @@ def perform_update(check_only: bool = False, force: bool = False) -> int:
                 print(_dim("  Use --force to reinstall anyway."))
             return 0
         elif remote_version != __version__:
-            print(_yellow(f"  → Update available: {__version__} → {remote_version}"))
+            # compare versions to show correct direction (remote may be cached older)
+            def _parse(v: str):
+                try:
+                    return tuple(int(x) for x in v.strip().lstrip("v").split("."))
+                except Exception:
+                    return (0,)
+
+            cur_t, rem_t = _parse(__version__), _parse(remote_version)
+            if rem_t > cur_t:
+                print(_yellow(f"  → Update available: {__version__} → {remote_version}"))
+            elif cur_t > rem_t:
+                # local ahead (e.g. raw GitHub cache) — not an update, treat as up-to-date
+                print(_dim(f"  (local {__version__} ahead of remote {remote_version} — raw GitHub cache, already up to date)"))
+                if not force and not check_only:
+                    print(_green("✓ Already up to date."))
+                    return 0
+                elif check_only:
+                    return 0
+                # if force, fall through to update
+                print(_yellow(f"  → Update available: {remote_version} → {__version__} (local newer)"))
+            else:
+                print(_yellow(f"  → Update available: {__version__} → {remote_version}"))
     else:
         print(_yellow("  ! Could not fetch remote version (offline?), proceeding with update..."))
         if check_only:
