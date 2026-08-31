@@ -22,7 +22,7 @@ cd keep-focused
 What it does:
 - Checks `python3 >= 3.9` (already on Debian)
 - Copies the app to `~/.local/share/keep-focused` (no root, no pip, no apt)
-- Creates `~/.local/bin/keep-focused` wrapper → `python3 ~/.local/share/keep-focused/keep_focused/cli.py`
+- Creates `~/.local/bin/keep-focused` wrapper → `python3 -m keep_focused` (`PYTHONPATH=~/.local/share/keep-focused`)
 - Adds `~/.local/bin` to `PATH` if needed and prints next steps
 
 No `sudo apt install python3-pip`, no `pip install`, no root.
@@ -49,11 +49,12 @@ You get an interactive menu (arrow navigation):
    Sites:   4 blocked  (facebook.com, x.com...)
    State:   🟢 ACTIVE  (hosts active, autostart on)
 
- › View blocked sites
+  › View blocked sites
    Block more sites (suggested + custom)
    Unblock sites
    Toggle enable/disable
    Change password
+   Update (check & install latest)
    Uninstall
    Quit
 
@@ -98,6 +99,26 @@ All browsers now show connection errors for blocked sites.
 
 - **Privileges**: installer never needs `sudo`. Only **runtime** `apply_block()` in `keep_focused/hosts.py:72` uses `sudo tee`/`pkexec` if `/etc/hosts` is not writable, so you see the normal sudo prompt inside the app.
 
+## Update
+
+```bash
+keep-focused update          # self-update, no sudo/pip (like opencode)
+keep-focused update --check  # check only
+keep-focused update --force  # force reinstall even if up to date
+```
+
+Or just `keep-focused` → `Update (check & install latest)` in the menu.
+
+**If you installed before `update` existed** (old version has no `keep-focused update`), just re-run the installer – it’s idempotent and preserves your config/blocks:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/xweinp/keep-focused/main/install.sh | bash
+# or if you cloned:
+git pull && ./install.sh
+```
+
+After that `keep-focused update` will be available.
+
 ## Scripting (optional, no TUI)
 
 The app also supports commands for automation (password required where noted):
@@ -109,6 +130,7 @@ keep-focused unblock spotify.com
 keep-focused disable
 keep-focused enable
 keep-focused passwd
+keep-focused update --check
 keep-focused uninstall
 keep-focused apply   # internal – called by systemd on boot, no password
 ```
@@ -126,7 +148,7 @@ keep-focused    # still launches the TUI
 
 ## Uninstall
 
-From the app: `keep-focused` → `6. Uninstall` (requires password) — cleans hosts, systemd, config.
+From the app: `keep-focused` → `Update/Uninstall` → `Uninstall` (requires password) — cleans hosts, systemd, config.
 
 Or manually:
 

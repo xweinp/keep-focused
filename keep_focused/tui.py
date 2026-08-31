@@ -552,6 +552,22 @@ def _uninstall_flow(cfg: dict | None) -> bool:
     return True
 
 
+def _update_flow() -> None:
+    _header("Update — check for latest version")
+    from . import __version__
+    from .update import perform_update
+
+    print(f"  Current version: {__version__}")
+    print(f"{DIM}Checking GitHub for updates...{RESET}\n")
+    # Use perform_update with check_only first to show version
+    rc = perform_update(check_only=False, force=False)
+    if rc == 0:
+        print(f"\n{DIM}Done. Restart keep-focused if it was updated.{RESET}")
+    else:
+        print(f"\n{YELLOW}Update completed with warnings (see above).{RESET}")
+    _pause()
+
+
 # ---------------------------------------------------------------------------
 # Arrow main menu
 # ---------------------------------------------------------------------------
@@ -577,11 +593,12 @@ def _main_menu_legacy(cfg: dict | None) -> str:
     print(f"{BOLD}3{RESET}. Unblock sites")
     print(f"{BOLD}4{RESET}. Toggle enable/disable")
     print(f"{BOLD}5{RESET}. Change password")
-    print(f"{BOLD}6{RESET}. Uninstall (remove all)")
+    print(f"{BOLD}6{RESET}. Update (check & install latest)")
+    print(f"{BOLD}7{RESET}. Uninstall (remove all)")
     print(f"{BOLD}q{RESET}. Quit")
     print(f"\n{DIM}Config: {config_location()}  |  autostart: {'on' if is_service_enabled() else 'off'}{RESET}")
     try:
-        choice = input(f"\n{BOLD}↳ Choose [1-6/q]: {RESET}").strip().lower()
+        choice = input(f"\n{BOLD}↳ Choose [1-7/q]: {RESET}").strip().lower()
     except (EOFError, KeyboardInterrupt):
         return "quit"
     mapping = {
@@ -590,7 +607,8 @@ def _main_menu_legacy(cfg: dict | None) -> str:
         "3": "unblock",
         "4": "toggle",
         "5": "passwd",
-        "6": "uninstall",
+        "6": "update",
+        "7": "uninstall",
         "q": "quit",
         "quit": "quit",
         "exit": "quit",
@@ -608,6 +626,7 @@ def _arrow_main_menu(cfg: dict | None) -> str:
             ("Unblock sites", "unblock"),
             ("Toggle enable/disable", "toggle"),
             ("Change password", "passwd"),
+            ("Update (check & install latest)", "update"),
             ("Uninstall (remove all)", "uninstall"),
             ("Quit", "quit"),
         ]
@@ -636,7 +655,7 @@ def _arrow_main_menu(cfg: dict | None) -> str:
                 return items[idx][1]
             elif key in ("q", "esc"):
                 return "quit"
-            elif key in ("1", "2", "3", "4", "5", "6", "7"):
+            elif key in ("1", "2", "3", "4", "5", "6", "7", "8"):
                 try:
                     n = int(key) - 1
                     if 0 <= n < len(items):
@@ -695,6 +714,8 @@ def run_tui() -> None:
                 _toggle_enable(cfg)
             elif action == "passwd":
                 _change_password(cfg)
+            elif action == "update":
+                _update_flow()
             elif action == "uninstall":
                 if _uninstall_flow(cfg):
                     time.sleep(0.5)

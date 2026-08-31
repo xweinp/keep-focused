@@ -5,7 +5,7 @@ import os
 import sys
 from pathlib import Path
 
-from . import DEFAULT_SELECTED, SUGGESTED_SITES
+from . import DEFAULT_SELECTED, SUGGESTED_SITES, __version__
 from .auth import (
     MIN_PASSWORD_LENGTH,
     hash_password,
@@ -338,6 +338,22 @@ def cmd_uninstall(args) -> None:
     print("✓ Uninstalled. All blocks removed and autostart disabled.")
 
 
+def cmd_update(args) -> None:
+    """Self-update via git or install.sh – no sudo, no pip."""
+    from .update import perform_update
+
+    # --version shortcut handled in main(), but also support here
+    if getattr(args, "version", False):
+        print(__version__)
+        return
+    rc = perform_update(check_only=getattr(args, "check", False), force=getattr(args, "force", False))
+    sys.exit(rc)
+
+
+def cmd_version(args) -> None:
+    print(__version__)
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="keep-focused",
@@ -347,6 +363,7 @@ def build_parser() -> argparse.ArgumentParser:
 Run without arguments to launch the interactive app:
 
   keep-focused
+  keep-focused update          # self-update, no sudo/pip (like opencode)
 
 Or use commands for scripting (requires password where noted):
 
@@ -359,6 +376,7 @@ Or use commands for scripting (requires password where noted):
 Suggested sites: """ + ", ".join(SUGGESTED_SITES) + """
         """,
     )
+    p.add_argument("--version", "-v", action="store_true", help="Show version")
     sub = p.add_subparsers(dest="command")
 
     # setup
@@ -407,10 +425,30 @@ Suggested sites: """ + ", ".join(SUGGESTED_SITES) + """
     up = sub.add_parser("uninstall", help="Remove all blocks, autostart and config (requires password)")
     up.set_defaults(func=cmd_uninstall)
 
+    upd = sub.add_parser("update", help="Self-update to latest version (no sudo, no pip, like opencode)")
+    upd.add_argument("--check", action="store_true", help="Check for updates without installing")
+    upd.add_argument("--force", action="store_true", help="Force reinstall even if up to date")
+    upd.set_defaults(func=cmd_update)
+
+    sub.add_parser("version", help="Show version").set_defaults(func=cmd_version)
+
     return p
 
 
 def main() -> None:
+    # --version / --help early (before TUI)
+    if len(sys.argv) == 2 and sys.argv[1] in ("--help", "-h"):
+        parser = build_parser()
+        parser.print_help()
+        sys.exit(0)
+    if len(sys.argv) == 2 and sys.argv[1] in ("--version", "-v"):
+        print(__version__)
+        sys.exit(0)
+    # Support `keep-focused --version` via global flag as well
+    if "--version" in sys.argv or "-v" in sys.argv:
+        # Let argparse handle it (will set args.version)
+        pass
+
     # No arguments → launch interactive TUI (like opencode / claude code)
     if len(sys.argv) == 1:
         from .tui import run_tui
@@ -418,14 +456,12 @@ def main() -> None:
         run_tui()
         return
 
-    # --help / --version without subcommand should still show help
-    if len(sys.argv) == 2 and sys.argv[1] in ("--help", "-h", "--version", "-v"):
-        parser = build_parser()
-        parser.print_help()
-        sys.exit(0)
-
     parser = build_parser()
     args = parser.parse_args()
+    # Handle global --version flag
+    if getattr(args, "version", False):
+        print(__version__)
+        sys.exit(0)
     if not hasattr(args, "func"):
         # Unknown args → launch TUI as well (handles `keep-focused` with stray args)
         from .tui import run_tui
