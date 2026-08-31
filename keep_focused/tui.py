@@ -32,15 +32,15 @@ CLEAR = "\033[2J\033[H"
 def _banner() -> str:
     from . import __version__
 
-    return f"""{BOLD}{CYAN}▐▛███▛█   Keep Focused! v{__version__}  🎯{RESET}
-{BOLD}{CYAN}▝▜██████▀  Stay sharp • System-wide • All browsers{RESET}
-{BOLD}{DIM}  ▝▝ ▝▝    Block distractions • 20-char password • systemd{RESET}
-{BOLD}{CYAN}
-  _  __               ______                     _ 
- | |/ /___ ___  ___  |  ___|__   ___ _   _ ___  ___  __| |
- | ' // _ \\  _ \\ |_ / _ \\ / __| | | / __|/ _ \\/ _` |
- | . \\  __/ |_| |  _| (_) | (__| |_| \\__ \\  __/ (_| |
- |_|\\_\\___|\\___/|_|  \\___/ \\___|\\__,_|___/\\___|\\__,_|
+    # Clean ASCII for "Keep Focused!" - generated via figlet slant, no claude code block
+    return f"""{BOLD}{CYAN}
+  _  __              ______                     _                _ 
+ | |/ /___ ___ _ __ |  ___|__   ___ _   _ ___  ___  ___  ___  | |
+ | ' // _ \\  _ \\| '_ \\| |_ / _ \\ / __| | | / __|/ _ \\/ __| | |
+ | . \\  __/ |_| | |_) |  _| (_) | (__| |_| \\__ \\  __/ (__| | |
+ |_|\\_\\___|\\___/| .__/|_|  \\___/ \\___|\\__,_|___/\\___|\\___|_|_|
+                | |                                             
+                |_|   🎯 v{__version__}  — stay focused
 {RESET}"""
 
 
