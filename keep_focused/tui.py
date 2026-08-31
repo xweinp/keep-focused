@@ -460,10 +460,13 @@ def _toggle_enable(cfg: dict) -> dict:
             print(f"{RED}✗ {e}{RESET}")
     else:
         print("This will re-enable blocking.")
+        print("Requires password.")
         choice = input("\nEnable blocking? [Y/n]: ").strip().lower()
         if choice in ("n", "no"):
             print("Cancelled.")
             _pause()
+            return cfg
+        if not _verify_or_exit(cfg):
             return cfg
         cfg["enabled"] = True
         save_config(cfg)
@@ -529,6 +532,13 @@ def _uninstall_flow(cfg: dict | None) -> bool:
     for p in _all_config_paths():
         try:
             if p.exists():
+                # Unlock if immutable (best-effort) before delete
+                try:
+                    from .lock import unlock_file
+
+                    unlock_file(p)
+                except Exception:
+                    pass
                 p.unlink()
                 try:
                     p.parent.rmdir()
@@ -539,6 +549,16 @@ def _uninstall_flow(cfg: dict | None) -> bool:
             import shutil
             import subprocess
 
+            # Try unlock via sudo before retry
+            try:
+                from .lock import unlock_file
+
+                unlock_file(p)
+                p.unlink()
+                print(f"{GREEN}✓ Removed {p}{RESET}")
+                continue
+            except Exception:
+                pass
             if shutil.which("sudo"):
                 subprocess.run(["sudo", "rm", "-f", str(p)], check=False)
                 print(f"{GREEN}✓ Removed {p} (via sudo){RESET}")

@@ -55,7 +55,6 @@ def _fetch_remote_version() -> str | None:
                 for line in data.splitlines():
                     line = line.strip()
                     if line.startswith("__version__"):
-                        # __version__ = "0.1.0"
                         parts = line.split("=")
                         if len(parts) == 2:
                             v = parts[1].strip().strip('"').strip("'")

@@ -145,16 +145,33 @@ if [ ! -f "$INSTALL_DIR/keep_focused/cli.py" ]; then
 fi
 
 # 4. Create wrapper binary (no sudo, no pip)
-cat > "$BIN_PATH" <<'WRAPPER'
+# Hardcode DEFAULT_INSTALL_DIR at install time so wrapper works even when
+# systemd runs as root (HOME=/root) – root would otherwise look in
+# /root/.local/share/keep-focused and fail.
+cat > "$BIN_PATH" <<WRAPPER
 #!/usr/bin/env bash
 set -euo pipefail
 # keep-focused wrapper – runs via python3, no pip needed
-INSTALL_DIR="${KEEP_FOCUSED_INSTALL_DIR:-$HOME/.local/share/keep-focused}"
-if [ -n "${KEEP_FOCUSED_INSTALL_DIR:-}" ]; then
-  INSTALL_DIR="$KEEP_FOCUSED_INSTALL_DIR"
+# Hardcoded fallback from install time (so root/systemd finds the real install)
+DEFAULT_INSTALL_DIR="$INSTALL_DIR"
+INSTALL_DIR="\${KEEP_FOCUSED_INSTALL_DIR:-\$DEFAULT_INSTALL_DIR}"
+# Fallback for sudo/root where HOME is /root but install is in user home
+if [ ! -d "\$INSTALL_DIR/keep_focused" ]; then
+  if [ -n "\${SUDO_USER:-}" ]; then
+    ALT="/home/\$SUDO_USER/.local/share/keep-focused"
+    if [ -d "\$ALT/keep_focused" ]; then INSTALL_DIR="\$ALT"; fi
+  fi
+  # Also try owner of this wrapper if still not found (handles systemd root)
+  if [ ! -d "\$INSTALL_DIR/keep_focused" ]; then
+    WRAPPER_OWNER_HOME=\$(getent passwd "\$(stat -c %u "$BIN_PATH" 2>/dev/null || echo \$USER)" 2>/dev/null | cut -d: -f6 || echo "")
+    if [ -n "\$WRAPPER_OWNER_HOME" ] && [ -d "\$WRAPPER_OWNER_HOME/.local/share/keep-focused/keep_focused" ]; then
+      INSTALL_DIR="\$WRAPPER_OWNER_HOME/.local/share/keep-focused"
+    fi
+  fi
 fi
-export PYTHONPATH="$INSTALL_DIR:${PYTHONPATH:-}"
-exec python3 -m keep_focused "$@"
+export PYTHONPATH="\$INSTALL_DIR:\${PYTHONPATH:-}"
+export KEEP_FOCUSED_INSTALL_DIR="\$INSTALL_DIR"
+exec python3 -m keep_focused "\$@"
 WRAPPER
 chmod +x "$BIN_PATH"
 green "✓ Binary installed at $BIN_PATH"

@@ -129,44 +129,73 @@ def _write_hosts_with_sudo(content: str, path: Path) -> bool:
 def write_hosts(content: str) -> None:
     p = _hosts_path()
     p.parent.mkdir(parents=True, exist_ok=True)
-    # If custom path for tests, just write directly (no sudo needed)
+    # If custom path for tests, just write directly (no sudo/lock needed)
     if os.environ.get("KEEP_FOCUSED_HOSTS"):
         # Testing: direct write
+        # Try unlock if immutable (for chattr tests), but don't fail
+        try:
+            from .lock import unlock_file, lock_file
+
+            unlock_file(p)
+        except Exception:
+            pass
         tmp = p.with_suffix(".tmp")
         tmp.write_text(content)
         tmp.replace(p)
+        try:
+            from .lock import lock_file
+
+            lock_file(p)
+        except Exception:
+            pass
         return
 
+    # Unlock if immutable (best-effort) before write
+    try:
+        from .lock import unlock_file
+
+        unlock_file(p)
+    except Exception:
+        pass
+
     # Try direct write first (works if running as root or hosts is writable)
+    wrote = False
     try:
         _write_hosts_direct(content, p)
-        return
+        wrote = True
     except PermissionError:
         pass
 
-    # Fall back to sudo
-    # Check if sudo is available and we can escalate
-    if _write_hosts_with_sudo(content, p):
-        return
+    if not wrote:
+        # Fall back to sudo
+        if _write_hosts_with_sudo(content, p):
+            wrote = True
+        elif shutil.which("pkexec"):
+            try:
+                with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".hosts") as tf:
+                    tf.write(content)
+                    tmp_name = tf.name
+                result = subprocess.run(
+                    ["pkexec", "cp", tmp_name, str(p)], capture_output=True, check=False
+                )
+                Path(tmp_name).unlink(missing_ok=True)
+                if result.returncode == 0:
+                    wrote = True
+            except Exception:
+                pass
 
-    # Try pkexec as last resort (GUI)
-    if shutil.which("pkexec"):
-        try:
-            with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".hosts") as tf:
-                tf.write(content)
-                tmp_name = tf.name
-            result = subprocess.run(
-                ["pkexec", "cp", tmp_name, str(p)], capture_output=True, check=False
-            )
-            Path(tmp_name).unlink(missing_ok=True)
-            if result.returncode == 0:
-                return
-        except Exception:
-            pass
+    if not wrote:
+        raise PermissionError(
+            f"Permission denied writing {p}. Try running with sudo: sudo keep-focused"
+        )
 
-    raise PermissionError(
-        f"Permission denied writing {p}. Try running with sudo: sudo keep-focused"
-    )
+    # Lock after write to prevent manual bypass without password
+    try:
+        from .lock import lock_file
+
+        lock_file(p)
+    except Exception:
+        pass
 
 
 def _strip_existing_block(content: str) -> str:

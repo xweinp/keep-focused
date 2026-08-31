@@ -164,12 +164,33 @@ systemctl --user disable keep-focused.service 2>/dev/null; sudo systemctl disabl
 
 Only stdlib (`argparse`, `hashlib`, `getpass`, `pathlib`, `curses`-free). No deps.
 
-Mock hosts/config/service:
+Run the automated test suite (38 tests, no manual steps):
+
+```bash
+./run-tests.sh          # tries pytest, falls back to stdlib runner
+# or
+python3 tests/run_tests.py
+# or with pytest if you have it
+pytest -q
+python3 -m pytest -q
+```
+
+Mock hosts/config/service for manual checks:
 
 ```bash
 KEEP_FOCUSED_HOSTS=/tmp/hosts KEEP_FOCUSED_CONFIG=/tmp/cfg.json KEEP_FOCUSED_SERVICE=/tmp/svc python3 -m keep_focused.cli status
 KEEP_FOCUSED_HOSTS=/tmp/hosts KEEP_FOCUSED_CONFIG=/tmp/cfg.json python3 -m keep_focused.tui  # runs TUI with mocks
 ```
+
+Tests cover:
+- `tests/test_auth.py` – 20-char password, PBKDF2
+- `tests/test_hosts.py` – normalize/expand, hosts block/clear, preserve other content
+- `tests/test_config.py` – save/load, XDG isolation
+- `tests/test_cli.py` – setup/block/unblock/enable/disable/passwd/uninstall require password
+- `tests/test_tui.py` – arrow vs legacy menu, toggle requires password both ways
+- `tests/test_systemd.py` – user vs system service, Environment for HOME-independent ExecStart
+- `tests/test_update.py` – self-update via install.sh/git, `keep-focused update --check`
+- `tests/test_lock.py` / `test_password_enforcement.py` – chattr best-effort, no bypass without password
 
 ## Suggested sites
 

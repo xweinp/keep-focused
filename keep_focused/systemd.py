@@ -50,13 +50,76 @@ def _find_executable() -> str:
     return f"{sys.executable} -m keep_focused"
 
 
-def service_content(executable: str | None = None) -> str:
+def _install_dir_for_service() -> Path:
+    env = os.environ.get("KEEP_FOCUSED_INSTALL_DIR")
+    if env:
+        return Path(env)
+    # Try to find where keep_focused is installed (check this file's location)
+    try:
+        this_install = Path(__file__).resolve().parent.parent
+        if (this_install / "keep_focused" / "cli.py").exists():
+            # If this_install looks like ~/.local/share/keep-focused or repo
+            # Prefer the user's local share if it exists
+            user_local = Path.home() / ".local" / "share" / "keep-focused"
+            if user_local.exists() and (user_local / "keep_focused" / "cli.py").exists():
+                return user_local
+            return this_install
+    except Exception:
+        pass
+    return Path.home() / ".local" / "share" / "keep-focused"
+
+
+def _config_for_service() -> Path:
+    # Prefer explicit config location if env set
+    env = os.environ.get("KEEP_FOCUSED_CONFIG")
+    if env:
+        return Path(env)
+    # Try user config
+    from .config import _user_config_path
+
+    user_cfg = _user_config_path()
+    if user_cfg.exists():
+        return user_cfg
+    # Fallback to system
+    return Path("/etc/keep-focused/config.json")
+
+
+def service_content(executable: str | None = None, is_user: bool = False) -> str:
     if executable is None:
         executable = _find_executable()
+    # For system service, we need an absolute, HOME-independent ExecStart.
+    # Detect if executable is the wrapper in ~/.local/bin – that wrapper is
+    # fragile when systemd runs as root (HOME=/root). Use python -m with
+    # explicit PYTHONPATH instead, and set KEEP_FOCUSED_* env so config is found.
+    install_dir = _install_dir_for_service()
+    config_path = _config_for_service()
+    is_user_wrapper = ".local/bin/keep-focused" in executable or str(Path.home() / ".local/bin/keep-focused") in executable
+    if is_user_wrapper and not is_user:
+        # System service: use explicit python with env
+        python = sys.executable
+        if not Path(python).is_absolute():
+            python = shutil.which("python3") or "/usr/bin/python3"
+        exec_start = f"{python} -m keep_focused apply"
+        env_lines = f"Environment=PYTHONPATH={install_dir}\nEnvironment=KEEP_FOCUSED_INSTALL_DIR={install_dir}\nEnvironment=KEEP_FOCUSED_CONFIG={config_path}\nEnvironment=HOME={Path.home()}"
+        return f"""[Unit]
+Description=keep-focused – re-apply website blocks on boot
+After=network.target
+
+[Service]
+Type=oneshot
+{env_lines}
+ExecStart={exec_start}
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+"""
+    # User service or non-wrapper (e.g., pip)
     if " " in executable:
         exec_start = executable + " apply"
     else:
         exec_start = f"{executable} apply"
+    wanted = "default.target" if is_user else "multi-user.target"
     return f"""[Unit]
 Description=keep-focused – re-apply website blocks on boot
 After=network.target
@@ -67,7 +130,7 @@ ExecStart={exec_start}
 RemainAfterExit=yes
 
 [Install]
-WantedBy=multi-user.target
+WantedBy={wanted}
 """
 
 
@@ -85,24 +148,26 @@ def is_systemd_available() -> bool:
 
 
 def _try_system_service_install(content: str, executable: str) -> bool:
-    """Try to install system service via sudo if not root."""
+    """Try to install system service via sudo if not root. Return True only if start succeeds."""
     path = SYSTEMD_PATH
     try:
-        # If running as root, direct write
         if os.geteuid() == 0:
             path.write_text(content)
             path.chmod(0o644)
             subprocess.run(["systemctl", "daemon-reload"], check=False)
             subprocess.run(["systemctl", "enable", SERVICE_NAME], check=False)
-            subprocess.run(["systemctl", "start", SERVICE_NAME], check=False)
-            return True
+            result = subprocess.run(["systemctl", "start", SERVICE_NAME], capture_output=True, text=True)
+            if result.returncode == 0:
+                return True
+            # Start failed – check status, don't claim success
+            print(f"  ! systemctl start failed: {result.stderr.strip() or result.stdout.strip()}")
+            # Try to show status
+            return False
     except Exception:
         pass
 
-    # Try via sudo
     if shutil.which("sudo"):
         try:
-            # Write to temp and sudo move
             import tempfile
 
             with tempfile.NamedTemporaryFile(mode="w", delete=False) as tf:
@@ -115,8 +180,14 @@ def _try_system_service_install(content: str, executable: str) -> bool:
             if result.returncode == 0:
                 subprocess.run(["sudo", "systemctl", "daemon-reload"], check=False)
                 subprocess.run(["sudo", "systemctl", "enable", SERVICE_NAME], check=False)
-                subprocess.run(["sudo", "systemctl", "start", SERVICE_NAME], check=False)
-                return True
+                start_res = subprocess.run(["sudo", "systemctl", "start", SERVICE_NAME], capture_output=True, text=True)
+                if start_res.returncode == 0:
+                    return True
+                print(f"  ! sudo systemctl start failed: {start_res.stderr.strip() or start_res.stdout.strip()}")
+                # Clean up broken file to not leave failing service
+                subprocess.run(["sudo", "rm", "-f", str(path)], check=False)
+                subprocess.run(["sudo", "systemctl", "daemon-reload"], check=False)
+                return False
         except Exception as e:
             print(f"  ! sudo system service install failed: {e}")
     return False
@@ -124,14 +195,17 @@ def _try_system_service_install(content: str, executable: str) -> bool:
 
 def _install_user_service(content: str) -> bool:
     path = _user_service_path()
+    # Use is_user=True to get WantedBy=default.target
+    if "WantedBy=multi-user.target" in content:
+        content = content.replace("WantedBy=multi-user.target", "WantedBy=default.target")
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content)
         path.chmod(0o644)
-        # Enable user service
         subprocess.run(["systemctl", "--user", "daemon-reload"], check=False)
         subprocess.run(["systemctl", "--user", "enable", SERVICE_NAME], check=False)
-        # Enable linger so it runs on boot even without login (if loginctl available)
+        # Try to start (not critical, will start on next login/boot)
+        subprocess.run(["systemctl", "--user", "start", SERVICE_NAME], check=False)
         if shutil.which("loginctl"):
             subprocess.run(["loginctl", "enable-linger", os.environ.get("USER", "")], check=False)
         return True
@@ -152,20 +226,33 @@ def install_service() -> bool:
         return False
 
     executable = _find_executable()
-    content = service_content(executable)
-
-    # Try system service first (preferred: works before login, no sudo needed at boot)
-    # If we are root or sudo is available, this will succeed
-    if _try_system_service_install(content, executable):
-        return True
-
-    # Fall back to user service (no sudo needed)
-    if _install_user_service(content):
-        print("  → Installed user service at", _user_service_path())
-        print("    (system service not installed – will need sudo password at setup, but runs on user login)")
-        return True
-
-    return False
+    install_dir = _install_dir_for_service()
+    # Prefer user service for user-local installs (like ~/.local/share/keep-focused)
+    # System service is fragile when HOME-dependent and requires sudo that may fail.
+    is_user_local = str(install_dir).startswith(str(Path.home()))
+    if is_user_local:
+        # Try user service first
+        user_content = service_content(executable, is_user=True)
+        if _install_user_service(user_content):
+            # Also try to ensure any broken system service is not left failing
+            # Don't attempt system service if user succeeded – user service is sufficient
+            return True
+        # Fallback to system if user failed
+        system_content = service_content(executable, is_user=False)
+        if _try_system_service_install(system_content, executable):
+            return True
+        return False
+    else:
+        # System-wide install (e.g., pip) – try system first
+        system_content = service_content(executable, is_user=False)
+        if _try_system_service_install(system_content, executable):
+            return True
+        user_content = service_content(executable, is_user=True)
+        if _install_user_service(user_content):
+            print("  → Installed user service at", _user_service_path())
+            print("    (system service not installed – will need sudo password at setup, but runs on user login)")
+            return True
+        return False
 
 
 def uninstall_service() -> bool:

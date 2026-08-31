@@ -250,9 +250,7 @@ def cmd_unblock(args) -> None:
 
 def cmd_enable(args) -> None:
     cfg = _require_setup()
-    # Enable doesn't require password? Let's require it to prevent bypass, but allow --no-auth for systemd?
-    if not args.no_auth:
-        _verify_auth(cfg)
+    _verify_auth(cfg)
     cfg["enabled"] = True
     save_config(cfg)
     if cfg["blocked_sites"]:
@@ -318,6 +316,12 @@ def cmd_uninstall(args) -> None:
     for p in _all_config_paths():
         try:
             if p.exists():
+                try:
+                    from .lock import unlock_file
+
+                    unlock_file(p)
+                except Exception:
+                    pass
                 p.unlink()
                 try:
                     p.parent.rmdir()
@@ -326,14 +330,30 @@ def cmd_uninstall(args) -> None:
                 print(f"✓ Removed {p}")
                 removed_any = True
         except PermissionError as e:
+            # Try unlock via lock helper before giving up
+            try:
+                from .lock import unlock_file
+
+                unlock_file(p)
+                p.unlink()
+                print(f"✓ Removed {p}")
+                removed_any = True
+                continue
+            except Exception:
+                pass
             print(f"✗ Permission denied removing {p}: {e}")
             sys.exit(1)
     if not removed_any:
-        # Fallback single path
         from .config import _config_path
 
         p = _config_path()
         if p.exists():
+            try:
+                from .lock import unlock_file
+
+                unlock_file(p)
+            except Exception:
+                pass
             p.unlink()
     print("✓ Uninstalled. All blocks removed and autostart disabled.")
 
@@ -411,8 +431,7 @@ Suggested sites: """ + ", ".join(SUGGESTED_SITES) + """
     sub.add_parser("list", help="List blocked sites").set_defaults(func=cmd_list)
     sub.add_parser("ls", help="Alias for list").set_defaults(func=cmd_list)
 
-    ep = sub.add_parser("enable", help="Enable blocking")
-    ep.add_argument("--no-auth", action="store_true", help=argparse.SUPPRESS)
+    ep = sub.add_parser("enable", help="Enable blocking (requires password)")
     ep.set_defaults(func=cmd_enable)
 
     dp = sub.add_parser("disable", help="Disable blocking (requires password)")

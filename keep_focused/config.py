@@ -74,6 +74,16 @@ def _actual_save_path() -> Path:
 def save_config(cfg: dict) -> None:
     p = _actual_save_path()
     _ensure_dir(p)
+    # Unlock if immutable (best-effort) before write
+    try:
+        from .lock import unlock_file, lock_file
+    except ImportError:
+        unlock_file = lock_file = None  # type: ignore
+    if unlock_file:
+        try:
+            unlock_file(p)
+        except Exception:
+            pass
     tmp = p.with_suffix(".tmp")
     tmp.write_text(json.dumps(cfg, indent=2) + "\n")
     tmp.chmod(0o600)
@@ -82,6 +92,12 @@ def save_config(cfg: dict) -> None:
         p.chmod(0o600)
     except OSError:
         pass
+    # Lock after write to prevent manual bypass without password
+    if lock_file:
+        try:
+            lock_file(p)
+        except Exception:
+            pass
 
 
 def is_setup() -> bool:
