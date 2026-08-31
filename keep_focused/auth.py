@@ -30,9 +30,13 @@ def hash_password(password: str, salt_hex: str | None = None) -> tuple[str, str]
 
 
 def verify_password(password: str, salt_hex: str, expected_hash_hex: str) -> bool:
-    """Constant-time verification."""
-    _, computed = hash_password(password, salt_hex)
-    return secrets.compare_digest(computed, expected_hash_hex)
+    """Constant-time verification. Returns False for wrong/short passwords, never raises."""
+    try:
+        salt = bytes.fromhex(salt_hex)
+        dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, PBKDF2_ITERATIONS)
+        return secrets.compare_digest(dk.hex(), expected_hash_hex)
+    except Exception:
+        return False
 
 
 def prompt_new_password(confirm: bool = True) -> str:

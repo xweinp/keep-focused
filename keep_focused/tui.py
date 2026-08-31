@@ -29,13 +29,7 @@ BLUE = "\033[34m"
 CLEAR = "\033[2J\033[H"
 
 
-BANNER = f"""{BOLD}{CYAN}
-  ╔══════════════════════════════════════════╗
-  ║         keep-focused  — stay sharp      ║
-  ║   Block distractions system-wide        ║
-  ║   Works in Chrome, Firefox, any browser║
-  ╚══════════════════════════════════════════╝{RESET}
-"""
+BANNER = f"""{BOLD}{CYAN}🎯 keep-focused{RESET}"""
 
 
 def _pause(msg: str = "Press ENTER to continue...") -> None:
