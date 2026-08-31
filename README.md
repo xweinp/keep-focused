@@ -3,7 +3,7 @@
 Interactive CLI app for Debian that blocks distracting websites **system-wide** — works in **Chrome, Firefox, any browser** via `/etc/hosts`. Like `opencode` or `claude code`: install with one command, no `sudo`, no `pip`, then launch the app and stay focused.
 
 - **System-wide** — `127.0.0.1` + `::1` for each domain + `www.` variant
-- **Suggested sites** — `facebook.com`, `x.com`, `linkedin.com`, `spotify.com`, … (13 presets, toggle with numbers)
+- **Suggested sites** — `facebook.com`, `x.com`, `linkedin.com`, `spotify.com`, … (13 presets, arrow + Space to toggle)
 - **Strong password** — ≥20 characters, PBKDF2-HMAC-SHA256, required to unblock/disable/uninstall
 - **Autostart** — `systemd` service re-applies blocks on every boot (`keep-focused apply`)
 
@@ -37,7 +37,7 @@ keep-focused
 export PATH="$HOME/.local/bin:$PATH" && keep-focused
 ```
 
-You get an interactive menu:
+You get an interactive menu (arrow navigation):
 
 ```
   ╔══════════════════════════════════════════╗
@@ -49,18 +49,20 @@ You get an interactive menu:
    Sites:   4 blocked  (facebook.com, x.com...)
    State:   🟢 ACTIVE  (hosts active, autostart on)
 
-  1. View blocked sites
-  2. Block more sites (suggested + custom)
-  3. Unblock sites
-  4. Toggle enable/disable
-  5. Change password
-  6. Uninstall
-  q. Quit
+ › View blocked sites
+   Block more sites (suggested + custom)
+   Unblock sites
+   Toggle enable/disable
+   Change password
+   Uninstall
+   Quit
+
+  ↑/↓ to move • Enter to select • q/Esc to quit
 ```
 
 **First run** goes to **Setup**:
 1. Checkbox list of 13 suggested sites (defaults `facebook.com`, `x.com`, `linkedin.com`, `spotify.com` pre-checked)
-   - Type numbers to toggle, `a`=all, `n`=none, `c`=custom domain, `d`=done
+   - **↑/↓ to move, Space to toggle, Enter done, a=all, n=none, c=custom, q/Esc cancel** (falls back to `1/q` typing when not a TTY)
 2. Set a password **≥20 chars** (hidden, twice). You need it to unblock/disable.
 3. The app then writes `~/.config/keep-focused/config.json` (0600) + patches `/etc/hosts` with `# BEGIN keep-focused` (uses `sudo` only here, prompts for your sudo password if needed) + enables `systemd` service so blocks persist after reboot.
 

@@ -1,6 +1,7 @@
 """Interactive CLI app (TUI) for keep-focused – like opencode/claude code.
 
 Run `keep-focused` without args to launch this app.
+Now with arrow navigation: Up/Down + Enter, Space to toggle.
 """
 
 import os
@@ -12,6 +13,7 @@ from . import DEFAULT_SELECTED, SUGGESTED_SITES
 from .auth import MIN_PASSWORD_LENGTH, hash_password, prompt_new_password, prompt_password, verify_password
 from .config import config_location, default_config, load_config, save_config
 from .hosts import apply_block, clear_block, get_blocked_from_hosts, is_block_active, normalize_domain
+from .keys import HIDE_CURSOR, REVERSE, SHOW_CURSOR, is_interactive, read_key
 from .systemd import install_service, is_service_enabled, uninstall_service
 
 # ANSI helpers – keep it lightweight, no external deps
@@ -44,7 +46,6 @@ def _pause(msg: str = "Press ENTER to continue...") -> None:
 
 
 def _clear() -> None:
-    # Don't clear if not a tty (for tests)
     if sys.stdout.isatty():
         sys.stdout.write(CLEAR)
         sys.stdout.flush()
@@ -85,11 +86,11 @@ def _verify_or_exit(cfg: dict) -> bool:
     return True
 
 
-def _select_sites_interactive(current: set[str] | None = None, title: str = "Select sites to block") -> list[str] | None:
-    """Interactive checkbox selector. Returns list or None if cancelled."""
+# ---------------------------------------------------------------------------
+# Legacy (fallback) site selector – used when not a TTY or in tests
+# ---------------------------------------------------------------------------
+def _select_sites_interactive_legacy(current: set[str] | None = None, title: str = "Select sites to block") -> list[str] | None:
     selected: set[str] = set(current) if current is not None else set(DEFAULT_SELECTED)
-    # If current is None (first setup), default to DEFAULT_SELECTED
-    # If current is set (block more), start from current
     while True:
         _header(title)
         print(f"{DIM}Toggle by number,  a=all  n=none  d=done  q=cancel  c=custom domain{RESET}\n")
@@ -110,8 +111,6 @@ def _select_sites_interactive(current: set[str] | None = None, title: str = "Sel
             return None
 
         if raw in ("d", "done", ""):
-            # If empty and it's first setup with defaults, treat as d
-            # need to ensure we return
             break
         if raw in ("q", "quit", "cancel"):
             return None
@@ -138,7 +137,6 @@ def _select_sites_interactive(current: set[str] | None = None, title: str = "Sel
                     continue
                 selected.add(d)
             continue
-        # Handle comma-separated numbers and also direct domain strings
         parts = raw.replace(" ", "").split(",")
         any_handled = False
         for part in parts:
@@ -157,7 +155,6 @@ def _select_sites_interactive(current: set[str] | None = None, title: str = "Sel
                     print(f"  {RED}✗ Out of range: {part}{RESET}")
                     time.sleep(0.7)
             except ValueError:
-                # treat as domain
                 d = normalize_domain(part)
                 if d and "." in d:
                     if d in selected:
@@ -174,6 +171,118 @@ def _select_sites_interactive(current: set[str] | None = None, title: str = "Sel
     return sorted(selected)
 
 
+# ---------------------------------------------------------------------------
+# Arrow-based site selector
+# ---------------------------------------------------------------------------
+def _arrow_select_sites(current: set[str] | None, title: str) -> list[str] | None:
+    selected: set[str] = set(current) if current is not None else set(DEFAULT_SELECTED)
+    idx = 0
+    # Hide cursor for arrow UI
+    sys.stdout.write(HIDE_CURSOR)
+    sys.stdout.flush()
+    try:
+        while True:
+            _header(title)
+            print(f"{DIM}↑/↓ move • Space toggle • Enter done • a=all n=none c=custom • q/Esc cancel{RESET}\n")
+            for i, site in enumerate(SUGGESTED_SITES):
+                checked = "☑" if site in selected else "☐"
+                # Highlighted line: reverse + bold, others dim/green
+                if i == idx:
+                    # Reverse video for highlighted line
+                    default_mark = f" {DIM}[suggested]{RESET}{REVERSE}" if site in DEFAULT_SELECTED else ""
+                    # Need to reset after reverse
+                    print(f"{REVERSE}  {i+1:2}. {checked} {site}{default_mark}  {RESET}")
+                else:
+                    color = GREEN if site in selected else DIM
+                    default_mark = f" {DIM}[suggested]{RESET}" if site in DEFAULT_SELECTED else ""
+                    print(f"  {color}{i+1:2}. {checked} {site}{default_mark}{RESET}")
+
+            # Show selected summary
+            if selected:
+                print(f"\n{DIM}Selected ({len(selected)}): {', '.join(sorted(selected)[:5])}{' …' if len(selected)>5 else ''}{RESET}")
+            else:
+                print(f"\n{DIM}Selected: (none){RESET}")
+            custom_only = [s for s in selected if s not in SUGGESTED_SITES]
+            if custom_only:
+                print(f"{DIM}Custom: {', '.join(sorted(custom_only))}{RESET}")
+            print(f"\n{DIM}Highlighted: {SUGGESTED_SITES[idx]}  [{ '☑' if SUGGESTED_SITES[idx] in selected else '☐' }] — press Space to toggle{RESET}")
+
+            key = read_key()
+            if key == "up":
+                idx = (idx - 1) % len(SUGGESTED_SITES)
+            elif key == "down":
+                idx = (idx + 1) % len(SUGGESTED_SITES)
+            elif key == "space":
+                site = SUGGESTED_SITES[idx]
+                if site in selected:
+                    selected.remove(site)
+                else:
+                    selected.add(site)
+            elif key == "enter":
+                return sorted(selected)
+            elif key in ("q", "esc"):
+                return None
+            elif key == "a":
+                selected = set(SUGGESTED_SITES)
+            elif key == "n":
+                selected = set()
+            elif key == "c":
+                # Need to restore terminal for input()
+                sys.stdout.write(SHOW_CURSOR)
+                sys.stdout.flush()
+                _clear()
+                print(BANNER)
+                print(f"{BOLD}{title} — custom domain{RESET}")
+                print(f"{DIM}{'─'*50}{RESET}")
+                try:
+                    custom = input("  Enter custom domain (e.g. youtube.com, or comma-separated): ").strip()
+                except (EOFError, KeyboardInterrupt):
+                    custom = ""
+                sys.stdout.write(HIDE_CURSOR)
+                sys.stdout.flush()
+                if not custom:
+                    continue
+                for part in custom.replace(" ", "").split(","):
+                    if not part:
+                        continue
+                    d = normalize_domain(part)
+                    if not d or "." not in d:
+                        print(f"  {RED}✗ Invalid domain: {part}{RESET}")
+                        time.sleep(0.7)
+                        continue
+                    selected.add(d)
+            elif key.isdigit():
+                # Allow quick toggle via number keys 1-9 (first 9 sites)
+                try:
+                    n = int(key)
+                    # For 1-9, map to 1-9; for multi-digit not needed in raw mode (single char)
+                    if 1 <= n <= len(SUGGESTED_SITES):
+                        site = SUGGESTED_SITES[n - 1]
+                        if site in selected:
+                            selected.remove(site)
+                        else:
+                            selected.add(site)
+                except ValueError:
+                    pass
+    finally:
+        sys.stdout.write(SHOW_CURSOR)
+        sys.stdout.flush()
+
+
+def _select_sites_interactive(current: set[str] | None = None, title: str = "Select sites to block") -> list[str] | None:
+    """Dispatch to arrow or legacy based on TTY."""
+    if is_interactive():
+        try:
+            return _arrow_select_sites(current, title)
+        except Exception as e:
+            # Fallback on any error (e.g., termios not available)
+            print(f"{DIM}(arrow input failed: {e}, falling back to keyboard){RESET}")
+            time.sleep(0.5)
+            return _select_sites_interactive_legacy(current, title)
+    else:
+        return _select_sites_interactive_legacy(current, title)
+
+
 def _setup_flow() -> bool:
     """Run full setup. Returns True if completed."""
     _header("Setup — choose sites & set password")
@@ -182,7 +291,6 @@ def _setup_flow() -> bool:
     print(f"Blocks re-applied on every boot (systemd).")
     print()
 
-    # Site selection
     chosen = _select_sites_interactive(None, "Setup — select sites to block")
     if chosen is None:
         print(f"\n{DIM}Setup cancelled.{RESET}")
@@ -194,7 +302,6 @@ def _setup_flow() -> bool:
     else:
         print(f"\n{GREEN}Will block: {', '.join(chosen)}{RESET}")
 
-    # Password
     print(f"\n{BOLD}Set a password to protect unblocking{RESET}")
     print(f"  Must be at least {YELLOW}{MIN_PASSWORD_LENGTH} characters{RESET}. You will need it to unblock/disable.")
     print(f"  {DIM}Tip: use a long phrase like 'correct-horse-battery-staple-keep-focused-2025'{RESET}")
@@ -213,7 +320,6 @@ def _setup_flow() -> bool:
         _pause()
         return False
 
-    # Apply hosts (will use sudo if needed)
     _header("Applying blocks...")
     try:
         apply_block(cfg["blocked_sites"], enabled=True)
@@ -230,7 +336,6 @@ def _setup_flow() -> bool:
         _pause()
         return False
 
-    # Systemd
     print(f"\n{DIM}Enabling autostart on boot...{RESET}")
     if install_service():
         print(f"{GREEN}✓ Autostart enabled — blocks re-applied on every boot.{RESET}")
@@ -254,7 +359,6 @@ def _view_blocked(cfg: dict) -> None:
         for s in sites:
             print(f"  {CYAN}•{RESET} {s}  {DIM}(also www.{s}){RESET}")
         print(f"\n{DIM}Total: {len(sites)} sites → {len(sites)*2} hosts entries{RESET}")
-        # Also show hosts active
         active = get_blocked_from_hosts()
         if active:
             print(f"{DIM}Hosts currently has {len(active)} entries.{RESET}")
@@ -268,14 +372,11 @@ def _block_more(cfg: dict) -> dict:
     chosen = _select_sites_interactive(current, "Block — select sites (current checked)")
     if chosen is None:
         return cfg
-    # diff
     current_sorted = sorted(current)
     if sorted(chosen) == current_sorted:
         print(f"\n{DIM}No changes.{RESET}")
         _pause()
         return cfg
-    # Additions only? The selector allows toggling both ways, but for "block more"
-    # we should allow full set. Let's compute new set.
     new_sites = sorted(set(chosen))
     if not _verify_or_exit(cfg):
         return cfg
@@ -359,15 +460,11 @@ def _toggle_enable(cfg: dict) -> dict:
             print(f"{RED}✗ {e}{RESET}")
     else:
         print("This will re-enable blocking.")
-        # Enable does not need password? Require it to prevent bypass? We allow without or with.
-        # For UX, enable without password but we can ask
         choice = input("\nEnable blocking? [Y/n]: ").strip().lower()
         if choice in ("n", "no"):
             print("Cancelled.")
             _pause()
             return cfg
-        # Try without password first, but if cfg requires password, we still want to verify?
-        # Keep simple: no password for enable
         cfg["enabled"] = True
         save_config(cfg)
         try:
@@ -439,8 +536,8 @@ def _uninstall_flow(cfg: dict | None) -> bool:
                     pass
                 print(f"{GREEN}✓ Removed {p}{RESET}")
         except PermissionError:
-            # try sudo rm
-            import shutil, subprocess
+            import shutil
+            import subprocess
 
             if shutil.which("sudo"):
                 subprocess.run(["sudo", "rm", "-f", str(p)], check=False)
@@ -455,7 +552,10 @@ def _uninstall_flow(cfg: dict | None) -> bool:
     return True
 
 
-def _main_menu(cfg: dict | None) -> str:
+# ---------------------------------------------------------------------------
+# Arrow main menu
+# ---------------------------------------------------------------------------
+def _main_menu_legacy(cfg: dict | None) -> str:
     _header("Main menu")
     _status_line(cfg)
     if cfg is None:
@@ -472,7 +572,6 @@ def _main_menu(cfg: dict | None) -> str:
             return "quit"
         return "setup" if choice == "" else "quit"
 
-    # Setup done – show full menu
     print(f"{BOLD}1{RESET}. View blocked sites")
     print(f"{BOLD}2{RESET}. Block more sites (suggested + custom)")
     print(f"{BOLD}3{RESET}. Unblock sites")
@@ -480,7 +579,6 @@ def _main_menu(cfg: dict | None) -> str:
     print(f"{BOLD}5{RESET}. Change password")
     print(f"{BOLD}6{RESET}. Uninstall (remove all)")
     print(f"{BOLD}q{RESET}. Quit")
-    # Also show quick status
     print(f"\n{DIM}Config: {config_location()}  |  autostart: {'on' if is_service_enabled() else 'off'}{RESET}")
     try:
         choice = input(f"\n{BOLD}↳ Choose [1-6/q]: {RESET}").strip().lower()
@@ -498,6 +596,68 @@ def _main_menu(cfg: dict | None) -> str:
         "exit": "quit",
     }
     return mapping.get(choice, "view" if choice == "" else "invalid")
+
+
+def _arrow_main_menu(cfg: dict | None) -> str:
+    if cfg is None:
+        items = [("Setup — choose sites & set password", "setup"), ("Quit", "quit")]
+    else:
+        items = [
+            ("View blocked sites", "view"),
+            ("Block more sites (suggested + custom)", "block"),
+            ("Unblock sites", "unblock"),
+            ("Toggle enable/disable", "toggle"),
+            ("Change password", "passwd"),
+            ("Uninstall (remove all)", "uninstall"),
+            ("Quit", "quit"),
+        ]
+    idx = 0
+    sys.stdout.write(HIDE_CURSOR)
+    sys.stdout.flush()
+    try:
+        while True:
+            _header("Main menu")
+            _status_line(cfg)
+            for i, (label, _) in enumerate(items):
+                if i == idx:
+                    print(f"{REVERSE} › {label} {RESET}")
+                else:
+                    print(f"   {label}")
+            if cfg is not None:
+                print(f"\n{DIM}Config: {config_location()}  |  autostart: {'on' if is_service_enabled() else 'off'}{RESET}")
+            print(f"\n{DIM}↑/↓ to move • Enter to select • q/Esc to quit{RESET}")
+
+            key = read_key()
+            if key == "up":
+                idx = (idx - 1) % len(items)
+            elif key == "down":
+                idx = (idx + 1) % len(items)
+            elif key == "enter":
+                return items[idx][1]
+            elif key in ("q", "esc"):
+                return "quit"
+            elif key in ("1", "2", "3", "4", "5", "6", "7"):
+                try:
+                    n = int(key) - 1
+                    if 0 <= n < len(items):
+                        return items[n][1]
+                except ValueError:
+                    pass
+    finally:
+        sys.stdout.write(SHOW_CURSOR)
+        sys.stdout.flush()
+
+
+def _main_menu(cfg: dict | None) -> str:
+    if is_interactive():
+        try:
+            return _arrow_main_menu(cfg)
+        except Exception as e:
+            print(f"{DIM}(arrow menu failed: {e}, fallback){RESET}")
+            time.sleep(0.3)
+            return _main_menu_legacy(cfg)
+    else:
+        return _main_menu_legacy(cfg)
 
 
 def run_tui() -> None:
@@ -520,7 +680,6 @@ def run_tui() -> None:
                 _setup_flow()
                 continue
 
-            # Need cfg for rest
             if cfg is None:
                 print(f"{YELLOW}Not set up yet.{RESET}")
                 time.sleep(0.8)
@@ -538,9 +697,10 @@ def run_tui() -> None:
                 _change_password(cfg)
             elif action == "uninstall":
                 if _uninstall_flow(cfg):
-                    # After uninstall, loop will show setup again
                     time.sleep(0.5)
                 continue
     except KeyboardInterrupt:
+        sys.stdout.write(SHOW_CURSOR)
+        sys.stdout.flush()
         print(f"\n\n{DIM}Interrupted. Bye!{RESET}")
         sys.exit(0)
