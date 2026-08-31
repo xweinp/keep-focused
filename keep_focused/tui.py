@@ -29,7 +29,22 @@ BLUE = "\033[34m"
 CLEAR = "\033[2J\033[H"
 
 
-BANNER = f"""{BOLD}{CYAN}🎯 keep-focused{RESET}"""
+def _banner() -> str:
+    from . import __version__
+
+    return f"""{BOLD}{CYAN}▐▛███▛█   Keep Focused! v{__version__}  🎯{RESET}
+{BOLD}{CYAN}▝▜██████▀  Stay sharp • System-wide • All browsers{RESET}
+{BOLD}{DIM}  ▝▝ ▝▝    Block distractions • 20-char password • systemd{RESET}
+{BOLD}{CYAN}
+  _  __               ______                     _ 
+ | |/ /___ ___  ___  |  ___|__   ___ _   _ ___  ___  __| |
+ | ' // _ \\  _ \\ |_ / _ \\ / __| | | / __|/ _ \\/ _` |
+ | . \\  __/ |_| |  _| (_) | (__| |_| \\__ \\  __/ (_| |
+ |_|\\_\\___|\\___/|_|  \\___/ \\___|\\__,_|___/\\___|\\__,_|
+{RESET}"""
+
+
+BANNER = _banner()
 
 
 def _pause(msg: str = "Press ENTER to continue...") -> None:
@@ -52,7 +67,7 @@ def _header(title: str) -> None:
     print(f"{DIM}{'─' * 50}{RESET}")
 
 
-def _status_line(cfg: dict | None) -> None:
+def _status_line(cfg: dict | None, show_config: bool = True) -> None:
     if cfg is None:
         print(f"{YELLOW}⚙  Not set up yet{RESET}  → run Setup\n")
         return
@@ -61,7 +76,8 @@ def _status_line(cfg: dict | None) -> None:
     active = is_block_active()
     svc = is_service_enabled()
     loc = config_location()
-    print(f" Config:  {DIM}{loc}{RESET}")
+    if show_config:
+        print(f" Config:  {DIM}{loc}{RESET}")
     print(f" Sites:   {BOLD}{len(blocked)}{RESET} blocked  {DIM}({', '.join(sorted(blocked)[:3])}{'...' if len(blocked)>3 else ''}){RESET}" if blocked else f" Sites:   {DIM}(none){RESET}")
     print(f" State:   {'🟢' if enabled and active else '🔴'}  {'ACTIVE' if enabled and active else 'DISABLED'}  {DIM}(hosts {'active' if active else 'inactive'}, autostart {'on' if svc else 'off'}){RESET}")
     print()
@@ -586,8 +602,10 @@ def _update_flow() -> None:
 # Arrow main menu
 # ---------------------------------------------------------------------------
 def _main_menu_legacy(cfg: dict | None) -> str:
-    _header("Main menu")
-    _status_line(cfg)
+    _clear()
+    print(BANNER)
+    print()
+    _status_line(cfg, show_config=False)
     if cfg is None:
         print(f"{BOLD}1{RESET}. Setup — choose sites & set password {YELLOW}(first run){RESET}")
         print(f"{BOLD}q{RESET}. Quit")
@@ -610,7 +628,6 @@ def _main_menu_legacy(cfg: dict | None) -> str:
     print(f"{BOLD}6{RESET}. Update (check & install latest)")
     print(f"{BOLD}7{RESET}. Uninstall (remove all)")
     print(f"{BOLD}q{RESET}. Quit")
-    print(f"\n{DIM}Config: {config_location()}  |  autostart: {'on' if is_service_enabled() else 'off'}{RESET}")
     try:
         choice = input(f"\n{BOLD}↳ Choose [1-7/q]: {RESET}").strip().lower()
     except (EOFError, KeyboardInterrupt):
@@ -649,15 +666,15 @@ def _arrow_main_menu(cfg: dict | None) -> str:
     sys.stdout.flush()
     try:
         while True:
-            _header("Main menu")
-            _status_line(cfg)
+            _clear()
+            print(BANNER)
+            print()
+            _status_line(cfg, show_config=False)
             for i, (label, _) in enumerate(items):
                 if i == idx:
                     print(f"{REVERSE} › {label} {RESET}")
                 else:
                     print(f"   {label}")
-            if cfg is not None:
-                print(f"\n{DIM}Config: {config_location()}  |  autostart: {'on' if is_service_enabled() else 'off'}{RESET}")
             print(f"\n{DIM}↑/↓ to move • Enter to select • q/Esc to quit{RESET}")
 
             key = read_key()
