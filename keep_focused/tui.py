@@ -32,16 +32,19 @@ CLEAR = "\033[2J\033[H"
 def _banner() -> str:
     from . import __version__
 
-    # Clean ASCII for "Keep Focused!" - generated via figlet slant, no claude code block
-    return f"""{BOLD}{CYAN}
-  _  __              ______                     _                _ 
- | |/ /___ ___ _ __ |  ___|__   ___ _   _ ___  ___  ___  ___  | |
- | ' // _ \\  _ \\| '_ \\| |_ / _ \\ / __| | | / __|/ _ \\/ __| | |
- | . \\  __/ |_| | |_) |  _| (_) | (__| |_| \\__ \\  __/ (__| | |
- |_|\\_\\___|\\___/| .__/|_|  \\___/ \\___|\\__,_|___/\\___|\\___|_|_|
-                | |                                             
-                |_|   🎯 v{__version__}  — stay focused
-{RESET}"""
+    # Clean ASCII for "Keep Focused!" - small figlet, generated via
+    # https://raw.githubusercontent.com/cmatsuoka/figlet/master/fonts/small.flf
+    # No claude code block, just the header ascii + version line.
+    return (
+        f"{BOLD}{CYAN}\n"
+        f"  _  __                       ___                                   _   _ \n"
+        f" | |/ /  ___   ___   _ __    | __|  ___   __   _  _   ___  ___   __| | | |\n"
+        f" | ' <  / -_) / -_) | '_ \\   | _|  / _ \\ / _| | || | (_-< / -_) / _` | |_|\n"
+        f" |_|\\_\\ \\___| \\___| | .__/   |_|   \\___/ \\__|  \\_,_| /__/ \\___| \\__,_| (_)\n"
+        f"                    |_|                                                   \n"
+        f"                         🎯  keep-focused v{__version__}\n"
+        f"{RESET}"
+    )
 
 
 BANNER = _banner()
