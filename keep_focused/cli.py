@@ -27,7 +27,7 @@ BANNER = r"""
 def _require_setup() -> dict:
     cfg = load_config()
     if cfg is None:
-        print("✗ Not set up yet. Run: sudo keep-focused setup")
+        print("✗ Not set up yet. Run: keep-focused")
         sys.exit(1)
     return cfg
 
@@ -125,15 +125,17 @@ def cmd_setup(args) -> None:
     cfg = default_config(h, salt, chosen)
     try:
         save_config(cfg)
-    except PermissionError:
-        print("✗ Permission denied writing config. Run with sudo: sudo keep-focused setup")
+    except PermissionError as e:
+        print(f"✗ Permission denied writing config: {e}")
+        print("  Try: keep-focused (will prompt for sudo if needed)")
         sys.exit(1)
 
-    # Apply hosts blocking
+    # Apply hosts blocking (uses sudo internally if needed)
     try:
         apply_block(cfg["blocked_sites"], enabled=cfg["enabled"])
-    except PermissionError:
-        print("✗ Permission denied writing /etc/hosts. Run with sudo.")
+    except PermissionError as e:
+        print(f"✗ {e}")
+        print("  Hint: your sudo password may be required. Try running: keep-focused")
         sys.exit(1)
 
     print(f"\n✓ Blocked {len(cfg['blocked_sites'])} site(s) (with www. variants → {len(cfg['blocked_sites'])*2} hosts entries).")
@@ -156,7 +158,7 @@ def cmd_setup(args) -> None:
 def cmd_status(args) -> None:
     cfg = load_config()
     if cfg is None:
-        print("Not set up. Run: sudo keep-focused setup")
+        print("Not set up. Run: keep-focused")
         return
     print(BANNER)
     print(f"Enabled:        {'yes' if cfg.get('enabled') else 'no'}")
@@ -304,45 +306,55 @@ def cmd_uninstall(args) -> None:
     # Clear hosts
     try:
         clear_block()
-    except PermissionError:
-        print("✗ Need root to clean /etc/hosts. Run with sudo.")
+    except PermissionError as e:
+        print(f"✗ {e}")
         sys.exit(1)
     # Remove service
     uninstall_service()
-    # Remove config
-    from .config import _config_path
+    # Remove config (try all locations)
+    from .config import _all_config_paths
 
-    p = _config_path()
-    try:
+    removed_any = False
+    for p in _all_config_paths():
+        try:
+            if p.exists():
+                p.unlink()
+                try:
+                    p.parent.rmdir()
+                except OSError:
+                    pass
+                print(f"✓ Removed {p}")
+                removed_any = True
+        except PermissionError as e:
+            print(f"✗ Permission denied removing {p}: {e}")
+            sys.exit(1)
+    if not removed_any:
+        # Fallback single path
+        from .config import _config_path
+
+        p = _config_path()
         if p.exists():
             p.unlink()
-            # try remove dir if empty
-            try:
-                p.parent.rmdir()
-            except OSError:
-                pass
-        print("✓ Uninstalled. All blocks removed and autostart disabled.")
-    except PermissionError:
-        print("✗ Need root to remove config. Run with sudo.")
-        sys.exit(1)
+    print("✓ Uninstalled. All blocks removed and autostart disabled.")
 
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="keep-focused",
-        description="Block distracting websites system-wide (Debian, all browsers)",
+        description="keep-focused – interactive CLI app to block distracting websites (Debian, all browsers). Run without arguments to launch the app.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-examples:
-  sudo keep-focused setup
-  sudo keep-focused setup --sites facebook.com x.com
+Run without arguments to launch the interactive app:
+
+  keep-focused
+
+Or use commands for scripting (requires password where noted):
+
+  keep-focused setup --sites facebook.com x.com
   keep-focused status
-  sudo keep-focused block youtube.com reddit.com
-  sudo keep-focused unblock spotify.com
-  sudo keep-focused disable   # requires password
-  sudo keep-focused enable
-  sudo keep-focused passwd
-  sudo keep-focused uninstall
+  keep-focused block youtube.com reddit.com   # password
+  keep-focused unblock spotify.com            # password
+  keep-focused disable                        # password
 
 Suggested sites: """ + ", ".join(SUGGESTED_SITES) + """
         """,
@@ -399,9 +411,25 @@ Suggested sites: """ + ", ".join(SUGGESTED_SITES) + """
 
 
 def main() -> None:
+    # No arguments → launch interactive TUI (like opencode / claude code)
+    if len(sys.argv) == 1:
+        from .tui import run_tui
+
+        run_tui()
+        return
+
+    # --help / --version without subcommand should still show help
+    if len(sys.argv) == 2 and sys.argv[1] in ("--help", "-h", "--version", "-v"):
+        parser = build_parser()
+        parser.print_help()
+        sys.exit(0)
+
     parser = build_parser()
     args = parser.parse_args()
     if not hasattr(args, "func"):
-        parser.print_help()
-        sys.exit(0)
+        # Unknown args → launch TUI as well (handles `keep-focused` with stray args)
+        from .tui import run_tui
+
+        run_tui()
+        return
     args.func(args)

@@ -4,7 +4,9 @@ After=network.target
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/bin/keep-focused apply
+# System service: ExecStart will be set by installer to /home/<user>/.local/bin/keep-focused or /usr/local/bin/keep-focused
+# User service (~/.config/systemd/user/keep-focused.service) uses %h/.local/bin/keep-focused
+ExecStart=keep-focused apply
 RemainAfterExit=yes
 
 [Install]
