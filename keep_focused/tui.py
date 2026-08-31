@@ -81,8 +81,18 @@ def _status_line(cfg: dict | None, show_config: bool = True) -> None:
     loc = config_location()
     if show_config:
         print(f" Config:  {DIM}{loc}{RESET}")
-    print(f" Sites:   {BOLD}{len(blocked)}{RESET} blocked  {DIM}({', '.join(sorted(blocked)[:3])}{'...' if len(blocked)>3 else ''}){RESET}" if blocked else f" Sites:   {DIM}(none){RESET}")
-    print(f" State:   {'🟢' if enabled and active else '🔴'}  {'ACTIVE' if enabled and active else 'DISABLED'}  {DIM}(hosts {'active' if active else 'inactive'}, autostart {'on' if svc else 'off'}){RESET}")
+    # Align parentheses reactively: pad left parts to same *string* length so "(" aligns
+    # (use string length for both, emoji is len 1; keeps "(" aligned in terminal + in code-block reply)
+    sites_left = f"{len(blocked)} blocked" if blocked else "0 blocked"
+    sites_detail = f"({', '.join(sorted(blocked)[:3])}{'...' if len(blocked)>3 else ''})" if blocked else "(none)"
+    state_detail = f"(hosts {'active' if active else 'inactive'}, autostart {'on' if svc else 'off'})"
+    emoji = "🟢" if enabled and active else "🔴"
+    # reactive: width follows sites_left length (+4 gap, at least 12)
+    pad_len = max(len(sites_left) + 4, 12)
+    sites_padded = sites_left.ljust(pad_len)
+    state_padded = emoji.ljust(pad_len)
+    print(f" Sites:   {BOLD}{sites_padded}{RESET} {DIM}{sites_detail}{RESET}")
+    print(f" State:   {state_padded} {DIM}{state_detail}{RESET}")
     print()
 
 
@@ -106,7 +116,7 @@ def _select_sites_interactive_legacy(current: set[str] | None = None, title: str
     selected: set[str] = set(current) if current is not None else set(DEFAULT_SELECTED)
     while True:
         _header(title)
-        print(f"{DIM}Toggle by number,  a=all  n=none  d=done  q=cancel  c=custom domain{RESET}\n")
+        print(f"{DIM}Toggle by number,  a=all  n=none  d=done  q=cancel  c=custom domain (any website, e.g. myfavouritegame.com){RESET}\n")
         for i, site in enumerate(SUGGESTED_SITES, 1):
             checked = "☑" if site in selected else "☐"
             color = GREEN if site in selected else DIM
@@ -196,7 +206,7 @@ def _arrow_select_sites(current: set[str] | None, title: str) -> list[str] | Non
     try:
         while True:
             _header(title)
-            print(f"{DIM}↑/↓ move • Space toggle • Enter done • a=all n=none c=custom • q/Esc cancel{RESET}\n")
+            print(f"{DIM}↑/↓ move • Space toggle • Enter done • a=all n=none c=custom (any website) • q/Esc cancel{RESET}\n")
             for i, site in enumerate(SUGGESTED_SITES):
                 checked = "☑" if site in selected else "☐"
                 # Highlighted line: reverse + bold, others dim/green
@@ -624,7 +634,7 @@ def _main_menu_legacy(cfg: dict | None) -> str:
         return "setup" if choice == "" else "quit"
 
     print(f"{BOLD}1{RESET}. View blocked sites")
-    print(f"{BOLD}2{RESET}. Block more sites (suggested + custom)")
+    print(f"{BOLD}2{RESET}. Block any website (suggested + custom)")
     print(f"{BOLD}3{RESET}. Unblock sites")
     print(f"{BOLD}4{RESET}. Toggle enable/disable")
     print(f"{BOLD}5{RESET}. Change password")
@@ -656,7 +666,7 @@ def _arrow_main_menu(cfg: dict | None) -> str:
     else:
         items = [
             ("View blocked sites", "view"),
-            ("Block more sites (suggested + custom)", "block"),
+            ("Block any website (suggested + custom)", "block"),
             ("Unblock sites", "unblock"),
             ("Toggle enable/disable", "toggle"),
             ("Change password", "passwd"),

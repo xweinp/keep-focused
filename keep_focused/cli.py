@@ -413,11 +413,11 @@ Suggested sites: """ + ", ".join(SUGGESTED_SITES) + """
     ap.set_defaults(func=cmd_apply)
 
     # block / add
-    bp = sub.add_parser("block", help="Block site(s) (requires password)")
-    bp.add_argument("sites", nargs="*", help="Domains to block (e.g. facebook.com)")
+    bp = sub.add_parser("block", help="Block site(s) (requires password) — any website, not just suggested")
+    bp.add_argument("sites", nargs="*", help="Domains to block (e.g. facebook.com or any custom myfavouritegame.com)")
     bp.set_defaults(func=cmd_block)
-    addp = sub.add_parser("add", help="Alias for block")
-    addp.add_argument("sites", nargs="*", help="Domains to block")
+    addp = sub.add_parser("add", help="Alias for block — any website")
+    addp.add_argument("sites", nargs="*", help="Domains to block (any website)")
     addp.set_defaults(func=cmd_block)
 
     # unblock / remove

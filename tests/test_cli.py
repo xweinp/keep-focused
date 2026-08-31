@@ -146,3 +146,35 @@ def test_uninstall_requires_password(tmp_env):
     # Correct should remove
     _run_cli(None, tmp_env, ["uninstall"], mock_pw=pw)
     assert not tmp_env["config"].exists()
+
+
+def test_block_custom_arbitrary_sites(tmp_env, monkeypatch):
+    # user can block any site, not just suggested list
+    pw = "d" * 20
+    with patch("builtins.input", return_value=""):
+        _run_cli(None, tmp_env, ["setup", "--password", pw])
+    # block arbitrary custom domains not in SUGGESTED_SITES
+    custom1 = "mycustom12345.com"
+    custom2 = "example.org"
+    custom3 = "whatever.someone.invents.example.com"
+    # need dnsmasq mock for wildcard check
+    monkeypatch.setenv("KEEP_FOCUSED_DNSMASQ", str(tmp_env["tmp"] / "dnsmasq_custom.conf"))
+    _run_cli(None, tmp_env, ["block", custom1, custom2], mock_pw=pw)
+    data = json.loads(tmp_env["config"].read_text())
+    assert custom1 in data["blocked_sites"]
+    assert custom2 in data["blocked_sites"]
+    # hosts should have them
+    hosts_content = tmp_env["hosts"].read_text()
+    assert custom1 in hosts_content
+    assert custom2 in hosts_content
+    # dnsmasq wildcard and is_blocked_host should cover any depth
+    from keep_focused.hosts import is_blocked_host
+    from keep_focused.dnsmasq import get_dnsmasq_blocked
+
+    assert custom1 in get_dnsmasq_blocked()
+    assert is_blocked_host(f"a.b.c.{custom1}", [custom1])
+    assert is_blocked_host(f"andy.whatever.someone.invents.{custom2}", [custom2])
+    # block another custom with subdomain
+    _run_cli(None, tmp_env, ["block", custom3], mock_pw=pw)
+    data = json.loads(tmp_env["config"].read_text())
+    assert custom3 in data["blocked_sites"]

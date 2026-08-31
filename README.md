@@ -2,8 +2,8 @@
 
 Interactive CLI app for Debian that blocks distracting websites **system-wide** — works in **Chrome, Firefox, any browser** via `/etc/hosts`. Like `opencode` or `claude code`: install with one command, no `sudo`, no `pip`, then launch the app and stay focused.
 
-- **System-wide** — `127.0.0.1` + `::1` for each domain + `www.` variant
-- **Suggested sites** — `facebook.com`, `x.com`, `linkedin.com`, `spotify.com`, … (13 presets, arrow + Space to toggle)
+- **System-wide** — `127.0.0.1` + `::1` for each domain + `www.` plus **wildcard for any subdomain** (`andy.whatever.<blocked>` → blocked) via `dnsmasq` `address=/<blocked>/127.0.0.1` with `hosts` fallback
+- **Suggested sites** — `facebook.com`, `x.com`, `linkedin.com`, `spotify.com`, … (13 presets, arrow + Space to toggle, plus any custom domain)
 - **Strong password** — ≥20 characters, PBKDF2-HMAC-SHA256, required to unblock/disable/uninstall
 - **Autostart** — `systemd` service re-applies blocks on every boot (`keep-focused apply`)
 
@@ -46,8 +46,8 @@ You get an interactive menu (arrow navigation):
 
   Main menu
   ──────────────────────────────────────────────────
-   Sites:   4 blocked  (facebook.com, x.com...)
-   State:   🟢 ACTIVE  (hosts active, autostart on)
+   Sites:   4 blocked     (facebook.com, x.com...)
+   State:   🟢             (hosts active, autostart on)
 
   › View blocked sites
    Block more sites (suggested + custom)
@@ -62,16 +62,18 @@ You get an interactive menu (arrow navigation):
 ```
 
 **First run** goes to **Setup**:
-1. Checkbox list of 13 suggested sites (defaults `facebook.com`, `x.com`, `linkedin.com`, `spotify.com` pre-checked)
-   - **↑/↓ to move, Space to toggle, Enter done, a=all, n=none, c=custom, q/Esc cancel** (falls back to `1/q` typing when not a TTY)
+1. Checkbox list of 13 suggested sites (defaults `facebook.com`, `x.com`, `linkedin.com`, `spotify.com` pre-checked) — **or press `c` to add any custom website** (e.g. `myfavouritegame.com`, `news.ycombinator.com`, comma-separated)
+   - **↑/↓ to move, Space to toggle, Enter done, a=all, n=none, c=custom (any website), q/Esc cancel** (falls back to `1/q` typing when not a TTY)
 2. Set a password **≥20 chars** (hidden, twice). You need it to unblock/disable.
-3. The app then writes `~/.config/keep-focused/config.json` (0600) + patches `/etc/hosts` with `# BEGIN keep-focused` (uses `sudo` only here, prompts for your sudo password if needed) + enables `systemd` service so blocks persist after reboot.
+3. The app then writes `~/.config/keep-focused/config.json` (0600) + patches `/etc/hosts` with `# BEGIN keep-focused` (uses `sudo` only here, prompts for your sudo password if needed) + writes `/etc/dnsmasq.d/keep-focused.conf` wildcard (`address=/<blocked>/127.0.0.1` for any `whatever.<blocked>`) + enables `systemd` service so blocks persist after reboot.
 
 All browsers now show connection errors for blocked sites.
 
 ## How it works
 
-- **Hosts file**: inserts between markers:
+- **Wildcard blocking**: any `whatever.<blocked>` is blocked (suffix dot check, not infix — `notspotify.com` not blocked by `spotify.com`, via `keep_focused/hosts.py:49` `is_blocked_host`). Achieved via `dnsmasq` wildcard (`keep_focused/dnsmasq.py:1` `address=/<blocked>/127.0.0.1` + `::1` covers any depth like `a.b.c.<blocked>`) with `hosts` fallback (`# BEGIN keep-focused` exact `bare`+`www.`). Tailscale `resolv.conf` handled via fallback.
+
+- **Hosts file** (fallback): inserts between markers:
 
   ```
   # BEGIN keep-focused
@@ -83,6 +85,8 @@ All browsers now show connection errors for blocked sites.
   ```
 
   Removal preserves other entries. Handles `https://`, `www.`, ports, paths — normalized to bare domain via `normalize_domain()` in `keep_focused/hosts.py:22`.
+
+- **dnsmasq wildcard**: when `dnsmasq` is available, `keep_focused/hosts.py:230` `apply_block` also writes `/etc/dnsmasq.d/keep-focused.conf` and restarts `dnsmasq` (sudo/pkexec). Test override via `$KEEP_FOCUSED_DNSMASQ`.
 
 - **Config**: `~/.config/keep-focused/config.json` (or `$XDG_CONFIG_HOME`, fallback to `/etc/keep-focused/config.json` for legacy `sudo` setups). Override for tests via `$KEEP_FOCUSED_CONFIG`.
 
@@ -97,7 +101,7 @@ All browsers now show connection errors for blocked sites.
 
 - **Autostart**: tries **system service** (`/etc/systemd/system/keep-focused.service` via `sudo tee` if available), falls back to **user service** (`~/.config/systemd/user/keep-focused.service` + `systemctl --user enable`). Both run `keep-focused apply` on boot; logic in `keep_focused/systemd.py:1`.
 
-- **Privileges**: installer never needs `sudo`. Only **runtime** `apply_block()` in `keep_focused/hosts.py:72` uses `sudo tee`/`pkexec` if `/etc/hosts` is not writable, so you see the normal sudo prompt inside the app.
+- **Privileges**: installer never needs `sudo`. Only **runtime** `apply_block()` in `keep_focused/hosts.py:147` / `keep_focused/dnsmasq.py:39` uses `sudo tee`/`pkexec` if `/etc/hosts`/`/etc/dnsmasq.d` is not writable, so you see the normal sudo prompt inside the app.
 
 ## Update
 
@@ -125,7 +129,9 @@ The app also supports commands for automation (password required where noted):
 
 ```bash
 keep-focused status
-keep-focused block youtube.com reddit.com
+keep-focused block youtube.com reddit.com              # any suggested
+keep-focused block myfavouritegame.com example.org     # any custom website
+keep-focused block andy.whatever.someone.invents.example.com  # any depth, wildcard
 keep-focused unblock spotify.com
 keep-focused disable
 keep-focused enable
@@ -164,7 +170,7 @@ systemctl --user disable keep-focused.service 2>/dev/null; sudo systemctl disabl
 
 Only stdlib (`argparse`, `hashlib`, `getpass`, `pathlib`, `curses`-free). No deps.
 
-Run the automated test suite (38 tests, no manual steps):
+Run the automated test suite (49 tests, no manual steps):
 
 ```bash
 ./run-tests.sh          # tries pytest, falls back to stdlib runner
@@ -183,18 +189,19 @@ KEEP_FOCUSED_HOSTS=/tmp/hosts KEEP_FOCUSED_CONFIG=/tmp/cfg.json python3 -m keep_
 ```
 
 Tests cover:
-- `tests/test_auth.py` – 20-char password, PBKDF2
-- `tests/test_hosts.py` – normalize/expand, hosts block/clear, preserve other content
+- `tests/test_auth.py` – 20-char password, PBKDF2 + persistence roundtrip
+- `tests/test_hosts.py` – normalize/expand, hosts block/clear, preserve other content, suffix dot wildcard (`is_blocked_host` not infix, any depth, custom domains)
 - `tests/test_config.py` – save/load, XDG isolation
-- `tests/test_cli.py` – setup/block/unblock/enable/disable/passwd/uninstall require password
+- `tests/test_cli.py` – setup/block/unblock/enable/disable/passwd/uninstall require password, custom arbitrary sites
 - `tests/test_tui.py` – arrow vs legacy menu, toggle requires password both ways
 - `tests/test_systemd.py` – user vs system service, Environment for HOME-independent ExecStart
 - `tests/test_update.py` – self-update via install.sh/git, `keep-focused update --check`
 - `tests/test_lock.py` / `test_password_enforcement.py` – chattr best-effort, no bypass without password
+- `tests/test_hosts.py` `is_blocked_host` + `dnsmasq` wildcard for any `whatever.<blocked>`
 
-## Suggested sites
+## Suggested sites + any custom
 
-`facebook.com`, `x.com`, `twitter.com`, `linkedin.com`, `spotify.com`, `instagram.com`, `youtube.com`, `reddit.com`, `tiktok.com`, `netflix.com`, `twitch.tv`, `discord.com`, `threads.net` — see `keep_focused/__init__.py:6`.
+`facebook.com`, `x.com`, `twitter.com`, `linkedin.com`, `spotify.com`, `instagram.com`, `youtube.com`, `reddit.com`, `tiktok.com`, `netflix.com`, `twitch.tv`, `discord.com`, `threads.net` — see `keep_focused/__init__.py:6` — **or any custom** via `c` in TUI or `keep-focused block myfavouritegame.com` (wildcard for any `whatever.<blocked>`).
 
 ## License
 

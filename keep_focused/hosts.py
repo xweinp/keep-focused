@@ -46,6 +46,24 @@ def expand_domains(domains: list[str]) -> list[str]:
     return sorted(out)
 
 
+def is_blocked_host(host: str, blocked_domains: list[str]) -> bool:
+    """Suffix check with dot boundary (not infix/prefix).
+
+    Returns True if host == blocked or host ends with "."+blocked.
+    So "spotify.com" blocks "spotify.com" and "open.spotify.com",
+    but NOT "notspotify.com" (infix would wrongly block it).
+    Also "x.com" blocks "sub.x.com" but not "notx.com".
+    """
+    h = normalize_domain(host)
+    for raw in blocked_domains:
+        d = normalize_domain(raw)
+        if not d:
+            continue
+        if h == d or h.endswith(f".{d}"):
+            return True
+    return False
+
+
 def _build_block_section(domains: list[str]) -> str:
     if not domains:
         return ""
@@ -210,7 +228,7 @@ def _strip_existing_block(content: str) -> str:
 
 
 def apply_block(domains: list[str], enabled: bool = True) -> None:
-    """Apply blocking state to hosts file."""
+    """Apply blocking state to hosts file and dnsmasq wildcard (any subdomain)."""
     content = read_hosts()
     content = _strip_existing_block(content)
     if enabled and domains:
@@ -219,13 +237,26 @@ def apply_block(domains: list[str], enabled: bool = True) -> None:
             content += "\n"
         content += block
     write_hosts(content)
+    # also update dnsmasq for wildcard (any depth: a.b.c.<blocked> -> 127.0.0.1)
+    try:
+        from .dnsmasq import apply_dnsmasq_block
+
+        apply_dnsmasq_block(domains, enabled=enabled)
+    except Exception:
+        pass
 
 
 def clear_block() -> None:
-    """Remove all keep-focused entries from hosts."""
+    """Remove all keep-focused entries from hosts and dnsmasq."""
     content = read_hosts()
     content = _strip_existing_block(content)
     write_hosts(content)
+    try:
+        from .dnsmasq import clear_dnsmasq_block
+
+        clear_dnsmasq_block()
+    except Exception:
+        pass
 
 
 def get_blocked_from_hosts() -> list[str]:
@@ -252,4 +283,11 @@ def get_blocked_from_hosts() -> list[str]:
 
 
 def is_block_active() -> bool:
-    return len(get_blocked_from_hosts()) > 0
+    if len(get_blocked_from_hosts()) > 0:
+        return True
+    try:
+        from .dnsmasq import is_dnsmasq_active
+
+        return is_dnsmasq_active()
+    except Exception:
+        return False
