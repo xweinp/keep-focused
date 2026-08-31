@@ -1,0 +1,11 @@
+[Unit]
+Description=keep-focused – re-apply website blocks on boot
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/keep-focused apply
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

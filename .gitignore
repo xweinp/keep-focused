@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+*.whl
+
+# Local test artefacts
+/tmp/
+.claude/
+
+# OS
+.DS_Store
