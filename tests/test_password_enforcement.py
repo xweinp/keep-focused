@@ -5,8 +5,10 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from click.testing import CliRunner
 
 from keep_focused.auth import hash_password
+from keep_focused.cli import cli
 from keep_focused.config import default_config
 
 
@@ -24,20 +26,35 @@ def _setup_cfg(tmp_env, pw="x" * 20, sites=None):
     return pw, cfg
 
 
+def _run_cli(tmp_env, argv, mock_pw):
+    import keep_focused.auth as auth_mod
+
+    runner = CliRunner()
+    patches = [
+        patch.object(auth_mod, "prompt_password", return_value=mock_pw),
+        patch("keep_focused.cli.prompt_password", return_value=mock_pw),
+        patch("getpass.getpass", return_value=mock_pw),
+    ]
+    for p in patches:
+        p.start()
+    try:
+        result = runner.invoke(cli, argv, catch_exceptions=False)
+        if result.exit_code != 0:
+            raise SystemExit(result.exit_code)
+        return result
+    finally:
+        for p in patches:
+            p.stop()
+
+
 def test_cli_block_requires_password(tmp_env):
     pw, _ = _setup_cfg(tmp_env)
-    from keep_focused.cli import build_parser
     import keep_focused.cli as cli_mod
     import keep_focused.auth as auth_mod
 
-    parser = build_parser()
     # Try block with wrong password
-    args = parser.parse_args(["block", "youtube.com"])
-    with patch.object(auth_mod, "prompt_password", return_value="wrong" * 5):
-        with patch("keep_focused.cli.prompt_password", return_value="wrong" * 5):
-            with patch("getpass.getpass", return_value="wrong" * 5):
-                with pytest.raises(SystemExit):
-                    args.func(args)
+    with pytest.raises(SystemExit):
+        _run_cli(tmp_env, ["block", "youtube.com"], mock_pw="wrong" * 5)
     # Config should not have youtube.com
     data = json.loads(tmp_env["config"].read_text())
     assert "youtube.com" not in data["blocked_sites"]
@@ -47,31 +64,17 @@ def test_cli_enable_requires_password_now(tmp_env):
     """Regression: previously enable --no-auth bypassed password."""
     pw, _ = _setup_cfg(tmp_env)
     # First disable
-    from keep_focused.cli import build_parser
     import keep_focused.auth as auth_mod
 
-    parser = build_parser()
-    args = parser.parse_args(["disable"])
-    with patch.object(auth_mod, "prompt_password", return_value=pw):
-        with patch("keep_focused.cli.prompt_password", return_value=pw):
-            with patch("getpass.getpass", return_value=pw):
-                args.func(args)
+    _run_cli(tmp_env, ["disable"], mock_pw=pw)
     # Verify disabled
     assert json.loads(tmp_env["config"].read_text())["enabled"] is False
     # Try enable with wrong password – should fail
-    parser2 = build_parser()
-    args2 = parser2.parse_args(["enable"])
-    with patch.object(auth_mod, "prompt_password", return_value="wrong" * 5):
-        with patch("keep_focused.cli.prompt_password", return_value="wrong" * 5):
-            with patch("getpass.getpass", return_value="wrong" * 5):
-                with pytest.raises(SystemExit):
-                    args2.func(args2)
+    with pytest.raises(SystemExit):
+        _run_cli(tmp_env, ["enable"], mock_pw="wrong" * 5)
     assert json.loads(tmp_env["config"].read_text())["enabled"] is False
     # Correct should succeed
-    with patch.object(auth_mod, "prompt_password", return_value=pw):
-        with patch("keep_focused.cli.prompt_password", return_value=pw):
-            with patch("getpass.getpass", return_value=pw):
-                args2.func(args2)
+    _run_cli(tmp_env, ["enable"], mock_pw=pw)
     assert json.loads(tmp_env["config"].read_text())["enabled"] is True
 
 

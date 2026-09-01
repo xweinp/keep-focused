@@ -1,97 +1,43 @@
-"""CLI for keep-focused – now powered by Click + Rich (with graceful fallback)."""
+"""CLI for keep-focused – Click + Rich (no legacy fallback)."""
 
 import sys
 
-try:
-    import rich_click as click
-    import rich_click.rich_click as rc
+import rich_click as click
+import rich_click.rich_click as rc
 
-    HAS_RICH_CLICK = True
-except ImportError:
-    try:
-        import click
-
-        HAS_RICH_CLICK = False
-        rc = None
-    except ImportError:
-        # No click at all – provide minimal stub so decorators don't crash;
-        # main() will fall back to argparse build_parser.
-        HAS_RICH_CLICK = False
-        rc = None
-
-        class _DummyClick:  # type: ignore
-            def echo(self, *a, **kw):
-                print(*a, **kw)
-
-            def group(self, *a, **kw):
-                def deco(f):
-                    return f
-
-                return deco
-
-            def command(self, *a, **kw):
-                def deco(f):
-                    return f
-
-                return deco
-
-            def option(self, *a, **kw):
-                def deco(f):
-                    return f
-
-                return deco
-
-            def argument(self, *a, **kw):
-                def deco(f):
-                    return f
-
-                return deco
-
-            def version_option(self, *a, **kw):
-                def deco(f):
-                    return f
-
-                return deco
-
-            def pass_context(self, f):
-                return f
-
-        click = _DummyClick()  # type: ignore
-
-# ── Rich-Click styling (only if available) ──────────────────────────────────
-if HAS_RICH_CLICK and rc is not None:
-    rc.USE_RICH_MARKUP = True
-    rc.USE_MARKDOWN = False
-    rc.SHOW_ARGUMENTS = True
-    rc.GROUP_ARGUMENTS_OPTIONS = True
-    rc.STYLE_HELPTEXT_FIRST_LINE = "bold cyan"
-    rc.STYLE_OPTION_DEFAULT = "cyan"
-    rc.STYLE_SWITCH = "bold cyan"
-    rc.STYLE_USAGE = "bold"
-    rc.STYLE_USAGE_COMMAND = "bold cyan"
-    rc.HEADER_TEXT = "🎯 [bold cyan]keep-focused[/] — stay productive  •  [dim]blocks distracting sites system-wide via /etc/hosts[/]"
-    rc.FOOTER_TEXT = (
-        "[dim]Run [bold]keep-focused[/] with no args to launch the interactive TUI (like opencode).[/]\n"
-        "[dim]Password (≥20 chars, PBKDF2) required for [cyan]block/unblock/enable/disable/uninstall[/].[/]"
-    )
-    rc.COMMAND_GROUPS = {
-        "keep-focused": [
-            {"name": "🚀 Getting Started", "commands": ["setup", "status"]},
-            {"name": "🚫 Blocking", "commands": ["block", "add", "unblock", "remove", "list", "ls"]},
-            {"name": "⚙️  Control", "commands": ["enable", "disable"]},
-            {"name": "🔧 System", "commands": ["passwd", "uninstall", "update", "version"]},
-        ]
-    }
-    rc.OPTION_GROUPS = {
-        "keep-focused": [{"name": "Options", "options": ["--version", "--help"]}],
-        "keep-focused setup": [
-            {"name": "Setup Options", "options": ["--sites", "--password", "--force"]},
-        ],
-        "keep-focused block": [{"name": "Arguments", "options": ["sites"]}],
-        "keep-focused passwd": [{"name": "Options", "options": ["--password"]}],
-        "keep-focused update": [{"name": "Options", "options": ["--check", "--force"]}],
-    }
-    rc.STYLE_COMMANDS_TABLE_COLUMN_TYPES = {"command": "cyan", "help": "dim"}
+# ── Rich-Click styling ──────────────────────────────────────────────────────
+rc.USE_RICH_MARKUP = True
+rc.USE_MARKDOWN = False
+rc.SHOW_ARGUMENTS = True
+rc.GROUP_ARGUMENTS_OPTIONS = True
+rc.STYLE_HELPTEXT_FIRST_LINE = "bold cyan"
+rc.STYLE_OPTION_DEFAULT = "cyan"
+rc.STYLE_SWITCH = "bold cyan"
+rc.STYLE_USAGE = "bold"
+rc.STYLE_USAGE_COMMAND = "bold cyan"
+rc.HEADER_TEXT = "🎯 [bold cyan]keep-focused[/] — stay productive  •  [dim]blocks distracting sites system-wide via /etc/hosts[/]"
+rc.FOOTER_TEXT = (
+    "[dim]Run [bold]keep-focused[/] with no args to launch the interactive TUI (like opencode).[/]\n"
+    "[dim]Password (≥20 chars, PBKDF2) required for [cyan]block/unblock/enable/disable/uninstall[/].[/]"
+)
+rc.COMMAND_GROUPS = {
+    "keep-focused": [
+        {"name": "🚀 Getting Started", "commands": ["setup", "status"]},
+        {"name": "🚫 Blocking", "commands": ["block", "add", "unblock", "remove", "list", "ls"]},
+        {"name": "⚙️  Control", "commands": ["enable", "disable"]},
+        {"name": "🔧 System", "commands": ["passwd", "uninstall", "update", "version"]},
+    ]
+}
+rc.OPTION_GROUPS = {
+    "keep-focused": [{"name": "Options", "options": ["--version", "--help"]}],
+    "keep-focused setup": [
+        {"name": "Setup Options", "options": ["--sites", "--password", "--force"]},
+    ],
+    "keep-focused block": [{"name": "Arguments", "options": ["sites"]}],
+    "keep-focused passwd": [{"name": "Options", "options": ["--password"]}],
+    "keep-focused update": [{"name": "Options", "options": ["--check", "--force"]}],
+}
+rc.STYLE_COMMANDS_TABLE_COLUMN_TYPES = {"command": "cyan", "help": "dim"}
 
 from . import DEFAULT_SELECTED, SUGGESTED_SITES, __version__
 from .auth import (
@@ -588,131 +534,12 @@ def version():
 # ---------------------------------------------------------------------------
 
 def build_parser():
-    """Return the Click group.
+    """Deprecated: use `cli` (Click group) directly.
 
-    Previously returned an argparse.ArgumentParser. Kept for backwards compatibility;
-    new code should use `cli` directly. For tests that still call `build_parser().parse_args`,
-    we provide a minimal shim that raises a helpful error directing to CliRunner.
+    Kept only to not break external imports; returns the Click group.
+    No argparse is constructed anymore — the old shim is removed.
     """
-    # Provide a shim object that mimics the old argparse parser for limited use.
-    # The shim's parse_args will emulate old behavior by invoking Click via CliRunner
-    # and returning a simple namespace with `func` attribute.
-    # However, for full compatibility, we also expose the Click group itself as `build_parser()`
-    # returns `cli`. Tests that expect argparse will need to be updated to use CliRunner.
-    # To support both, we attach a `parse_args` attribute to the group.
-    import argparse  # kept for compatibility
-
-    # Build a minimal argparse parser for legacy tests if they rely on argparse API.
-    # This mirrors the old implementation but is not used by `main()` anymore.
-    # We keep it to avoid breaking external callers.
-    p = argparse.ArgumentParser(
-        prog="keep-focused",
-        description="keep-focused – interactive CLI app to block distracting websites (Debian, all browsers). Run without arguments to launch the app.",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="\nRun without arguments to launch the interactive app:\n\n"
-        "  keep-focused\n"
-        "  keep-focused update          # self-update, no sudo/pip (like opencode)\n\n"
-        "Or use commands for scripting (requires password where noted):\n\n"
-        "  keep-focused setup --sites facebook.com x.com\n"
-        "  keep-focused status\n"
-        "  keep-focused block youtube.com reddit.com   # password\n"
-        "  keep-focused unblock spotify.com            # password\n"
-        "  keep-focused disable                        # password\n\n"
-        f"Suggested sites: {', '.join(SUGGESTED_SITES)}\n",
-    )
-    p.add_argument("--version", "-v", action="store_true", help="Show version")
-    # Provide a dummy subparsers setup so that `parse_args` doesn't crash for legacy callers,
-    # but the actual CLI is Click-based. We return the Click group as primary and also attach
-    # a helper to allow `parser.parse_args` style tests to still run via Click.
-    # To make legacy tests work, we implement a wrapper:
-    class _Shim:
-        def __init__(self, click_group, argparse_parser):
-            self._click_group = click_group
-            self._argparse_parser = argparse_parser
-
-        def parse_args(self, args=None):
-            # First try argparse parsing for legacy tests that expect `args.func`
-            # If that succeeds and has func, return it
-            try:
-                ns = self._argparse_parser.parse_args(args)
-                # If argparse succeeded and has func, return it (legacy path)
-                if hasattr(ns, "func"):
-                    return ns
-            except SystemExit:
-                # argparse would exit on unknown; fall through to Click handling
-                raise
-            # Fallback: use Click to parse and emulate Namespace
-            # For new tests, they should use CliRunner directly, not this shim
-            return self._argparse_parser.parse_args(args)
-
-        def print_help(self):
-            return self._argparse_parser.print_help()
-
-        def __getattr__(self, name):
-            return getattr(self._argparse_parser, name)
-
-    # We still need to populate the argparse parser with subcommands for shim to work.
-    # Re-create full argparse setup for shim (duplicate of old logic) – minimal for tests
-    sub = p.add_subparsers(dest="command")
-
-    def _dummy(*a, **kw):
-        pass
-
-    # setup
-    sp = sub.add_parser("setup", help="Interactive setup: choose sites, set password, enable autostart")
-    sp.add_argument("--sites", nargs="*", help="Pre-select sites to block (bypasses prompt for them)")
-    sp.add_argument("--password", help="Set password non-interactively (for scripting, min 20 chars)")
-    sp.add_argument("--force", action="store_true", help="Re-run setup even if already configured")
-
-    def _setup_shim(args):
-        sites = args.sites or []
-        _do_setup(sites, args.password, args.force)
-
-    sp.set_defaults(func=_setup_shim)
-
-    # For Click-based commands, call the underlying helpers directly
-    # (so build_parser works even when click is dummy / no rich and avoids RichCommand SystemExit)
-    sub.add_parser("status", help="Show blocked sites and whether blocking is active").set_defaults(func=lambda args: _do_status())
-    ap = sub.add_parser("apply", help=argparse.SUPPRESS)
-    ap.set_defaults(func=lambda args: _do_apply())
-    bp = sub.add_parser("block", help="Block site(s) (requires password) — any website, not just suggested")
-    bp.add_argument("sites", nargs="*", help="Domains to block (e.g. facebook.com or any custom myfavouritegame.com)")
-    bp.set_defaults(func=lambda args: _block_impl(args.sites))
-    addp = sub.add_parser("add", help="Alias for block — any website")
-    addp.add_argument("sites", nargs="*", help="Domains to block (any website)")
-    addp.set_defaults(func=lambda args: _block_impl(args.sites))
-    ub = sub.add_parser("unblock", help="Unblock site(s) (requires password)")
-    ub.add_argument("sites", nargs="*", help="Domains to unblock")
-    ub.set_defaults(func=lambda args: _unblock_impl(args.sites))
-    rp = sub.add_parser("remove", help="Alias for unblock")
-    rp.add_argument("sites", nargs="*", help="Domains to unblock")
-    rp.set_defaults(func=lambda args: _unblock_impl(args.sites))
-    sub.add_parser("list", help="List blocked sites").set_defaults(func=lambda args: _list_impl())
-    sub.add_parser("ls", help="Alias for list").set_defaults(func=lambda args: _list_impl())
-    ep = sub.add_parser("enable", help="Enable blocking (requires password)")
-    ep.set_defaults(func=lambda args: _do_enable())
-    dp = sub.add_parser("disable", help="Disable blocking (requires password)")
-    dp.set_defaults(func=lambda args: _do_disable())
-    pp = sub.add_parser("passwd", help="Change password (requires old password)")
-    pp.add_argument("--password", help="New password non-interactively (min 20 chars)")
-
-    def _passwd_shim(args):
-        _do_passwd(args.password)
-
-    pp.set_defaults(func=_passwd_shim)
-    up = sub.add_parser("uninstall", help="Remove all blocks, autostart and config (requires password)")
-    up.set_defaults(func=lambda args: _do_uninstall())
-    upd = sub.add_parser("update", help="Self-update to latest version (no sudo, no pip, like opencode)")
-    upd.add_argument("--check", action="store_true", help="Check for updates without installing")
-    upd.add_argument("--force", action="store_true", help="Force reinstall even if up to date")
-
-    def _update_shim(args):
-        _do_update(args.check, args.force)
-
-    upd.set_defaults(func=_update_shim)
-    sub.add_parser("version", help="Show version").set_defaults(func=lambda args: _do_version())
-
-    return _Shim(cli, p)
+    return cli
 
 
 def main() -> None:
@@ -723,34 +550,4 @@ def main() -> None:
         run_tui()
         return
 
-    # If Click is available (real click or rich_click), delegate to it
-    # Dummy fallback has cli as plain function without .main/.invoke
-    is_click_available = False
-    try:
-        is_click_available = hasattr(cli, "main") or hasattr(cli, "invoke") or hasattr(cli, "parse_args")
-    except Exception:
-        is_click_available = False
-
-    if is_click_available and click is not None and not isinstance(click, type) and hasattr(click, "echo"):
-        # Real Click (plain or rich) – use it
-        try:
-            # Check if cli is a Click Group (has .main)
-            if hasattr(cli, "main"):
-                cli(prog_name="keep-focused")
-                return
-        except SystemExit:
-            raise
-        except Exception:
-            pass
-
-    # Fallback to argparse (when click not installed)
-    parser = build_parser()
-    try:
-        args = parser.parse_args()
-    except SystemExit as e:
-        raise
-    if hasattr(args, "func"):
-        args.func(args)
-    else:
-        parser.print_help()
-        sys.exit(0)
+    cli(prog_name="keep-focused")
