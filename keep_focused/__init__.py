@@ -1,6 +1,6 @@
 """keep-focused – block distracting websites system-wide."""
 
-__version__ = "0.2.6"
+__version__ = "0.2.7"
 
 # Suggested sites shown during `keep-focused setup`
 SUGGESTED_SITES = [

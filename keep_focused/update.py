@@ -44,13 +44,18 @@ def _find_repo_root() -> Path | None:
 
 
 def _fetch_remote_version() -> str | None:
-    """Fetch remote __version__ via raw GitHub."""
-    url = f"{RAW_BASE}/main/keep_focused/__init__.py"
+    """Fetch remote __version__ via raw GitHub with cache-busting."""
+    import time
+
+    ts = str(int(time.time()))
+    # Cache-bust: raw.githubusercontent.com is CDN-cached for 300s, add ?v= to bust
+    url = f"{RAW_BASE}/main/keep_focused/__init__.py?v={ts}"
     # Also try master branch fallback
     urls = [url, url.replace("/main/", "/master/")]
     for u in urls:
         try:
-            with urllib.request.urlopen(u, timeout=5) as resp:
+            req = urllib.request.Request(u, headers={"Cache-Control": "no-cache", "Pragma": "no-cache"})
+            with urllib.request.urlopen(req, timeout=5) as resp:
                 data = resp.read().decode("utf-8", errors="ignore")
                 for line in data.splitlines():
                     line = line.strip()
@@ -88,14 +93,18 @@ def _update_via_git(repo_root: Path) -> bool:
 
 def _update_via_install_sh() -> bool:
     """Download and run install.sh via bash (like curl | bash), but using Python to avoid curl dep."""
-    # We will fetch install.sh content and execute it
-    install_url = f"{RAW_BASE}/main/install.sh"
+    # We will fetch install.sh content and execute it with cache-busting
+    import time
+
+    ts = str(int(time.time()))
+    install_url = f"{RAW_BASE}/main/install.sh?v={ts}"
     urls = [install_url, install_url.replace("/main/", "/master/")]
     install_content = None
     used_url = None
     for u in urls:
         try:
-            with urllib.request.urlopen(u, timeout=10) as resp:
+            req = urllib.request.Request(u, headers={"Cache-Control": "no-cache", "Pragma": "no-cache"})
+            with urllib.request.urlopen(req, timeout=10) as resp:
                 install_content = resp.read()
                 used_url = u
                 break
