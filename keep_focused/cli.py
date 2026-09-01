@@ -1,8 +1,43 @@
-"""CLI for keep-focused – now powered by Click."""
+"""CLI for keep-focused – now powered by Click + Rich."""
 
 import sys
 
-import click
+import rich_click as click
+import rich_click.rich_click as rc
+
+# ── Rich-Click styling ────────────────────────────────────────────────────────
+rc.USE_RICH_MARKUP = True
+rc.USE_MARKDOWN = False
+rc.SHOW_ARGUMENTS = True
+rc.GROUP_ARGUMENTS_OPTIONS = True
+rc.STYLE_HELPTEXT_FIRST_LINE = "bold cyan"
+rc.STYLE_OPTION_DEFAULT = "cyan"
+rc.STYLE_SWITCH = "bold cyan"
+rc.STYLE_USAGE = "bold"
+rc.STYLE_USAGE_COMMAND = "bold cyan"
+rc.HEADER_TEXT = "🎯 [bold cyan]keep-focused[/] — stay productive  •  [dim]blocks distracting sites system-wide via /etc/hosts[/]"
+rc.FOOTER_TEXT = (
+    "[dim]Run [bold]keep-focused[/] with no args to launch the interactive TUI (like opencode).[/]\n"
+    "[dim]Password (≥20 chars, PBKDF2) required for [cyan]block/unblock/enable/disable/uninstall[/].[/]"
+)
+rc.COMMAND_GROUPS = {
+    "keep-focused": [
+        {"name": "🚀 Getting Started", "commands": ["setup", "status"]},
+        {"name": "🚫 Blocking", "commands": ["block", "add", "unblock", "remove", "list", "ls"]},
+        {"name": "⚙️  Control", "commands": ["enable", "disable"]},
+        {"name": "🔧 System", "commands": ["passwd", "uninstall", "update", "version"]},
+    ]
+}
+rc.OPTION_GROUPS = {
+    "keep-focused": [{"name": "Options", "options": ["--version", "--help"]}],
+    "keep-focused setup": [
+        {"name": "Setup Options", "options": ["--sites", "--password", "--force"]},
+    ],
+    "keep-focused block": [{"name": "Arguments", "options": ["sites"]}],
+    "keep-focused passwd": [{"name": "Options", "options": ["--password"]}],
+    "keep-focused update": [{"name": "Options", "options": ["--check", "--force"]}],
+}
+rc.STYLE_COMMANDS_TABLE_COLUMN_TYPES = {"command": "cyan", "help": "dim"}
 
 from . import DEFAULT_SELECTED, SUGGESTED_SITES, __version__
 from .auth import (
@@ -53,18 +88,11 @@ def _print_suggested(selected: set[str] | None = None) -> None:
 
 def _epilog() -> str:
     return (
-        "\b\nRun without arguments to launch the interactive app:\n\n"
-        "  keep-focused\n"
-        "  keep-focused update          # self-update, no sudo/pip (like opencode)\n"
-        "\n"
-        "Or use commands for scripting (requires password where noted):\n\n"
-        "  keep-focused setup --sites facebook.com x.com\n"
-        "  keep-focused status\n"
-        "  keep-focused block youtube.com reddit.com   # password\n"
-        "  keep-focused unblock spotify.com            # password\n"
-        "  keep-focused disable                        # password\n"
-        "\n"
-        f"Suggested sites: {', '.join(SUGGESTED_SITES)}"
+        "[bold]Examples:[/]  [dim]keep-focused[/] [dim]# TUI[/]  •  "
+        "[dim]keep-focused update[/] [dim]# update[/]  •  "
+        "[dim]keep-focused status[/] •  [dim]block/unblock with 🔒[/]\n"
+        f"[bold]Suggested:[/] [dim]{', '.join(SUGGESTED_SITES)}[/]\n"
+        "[dim]Tip: ↑/↓ + Space to toggle sites in the TUI.[/]"
     )
 
 
@@ -72,7 +100,12 @@ def _epilog() -> str:
     name="keep-focused",
     context_settings=dict(help_option_names=["-h", "--help"]),
     invoke_without_command=True,
-    help="keep-focused – interactive CLI app to block distracting websites (Debian, all browsers). Run without arguments to launch the app.",
+    help=(
+        "[bold cyan]keep-focused[/] — block distracting websites [dim]system-wide via /etc/hosts[/]\n\n"
+        "Works in [bold]Chrome, Firefox, any browser[/]. "
+        "Run with [bold]no arguments[/] to launch the [cyan]interactive TUI[/] "
+        "(like [italic]opencode[/] / [italic]claude code[/])."
+    ),
     epilog=_epilog(),
 )
 @click.version_option(__version__, "--version", "-v", prog_name="keep-focused", message="%(version)s")
@@ -192,19 +225,24 @@ def _do_setup(sites_combined: list[str], password: str | None, force: bool) -> N
     click.echo("To unblock, you will need your password.")
 
 
-@cli.command("setup", help="Interactive setup: choose sites, set password, enable autostart")
-@click.option("--sites", "sites_opt", multiple=True, help="Pre-select sites to block (repeatable, e.g. --sites facebook.com --sites x.com)")
-@click.option("--password", help="Set password non-interactively (for scripting, min 20 chars)")
-@click.option("--force", is_flag=True, help="Re-run setup even if already configured")
-@click.argument("extra_sites", nargs=-1, metavar="")
-def setup_cmd(sites_opt, password, force, extra_sites):
-    # Merge --sites and stray positional args (supports `setup --sites a b` via extra_sites)
+@cli.command(
+    "setup",
+    help="[bold]Interactive setup[/] — choose sites, set password, enable autostart ([dim]first run[/])",
+    context_settings=dict(allow_extra_args=True, ignore_unknown_options=True),
+)
+@click.option("--sites", "sites_opt", multiple=True, help="Pre-select sites to block ([cyan]repeatable[/], e.g. [dim]--sites facebook.com --sites x.com[/])")
+@click.option("--password", help="Set password non-interactively for scripting ([yellow]min 20 chars[/])")
+@click.option("--force", is_flag=True, help="Re-run setup even if already configured ([red]overwrites[/])")
+@click.pass_context
+def setup_cmd(ctx, sites_opt, password, force):
+    # Merge --sites and stray positional args (supports `setup --sites a b` via ctx.args)
+    extra_sites = tuple(ctx.args)
     sites_combined = list(sites_opt) + list(extra_sites)
 
     _do_setup(sites_combined, password, force)
 
 
-@cli.command("status", help="Show blocked sites and whether blocking is active")
+@cli.command("status", help="Show [cyan]blocked sites[/], [dim]hosts[/] state & [dim]autostart[/] status")
 def status_cmd():
     cfg = load_config()
     if cfg is None:
@@ -230,7 +268,7 @@ def status_cmd():
 
 @cli.command("apply", hidden=True)
 def apply_cmd():
-    """Internal: re-apply from config (used by systemd). No password needed."""
+    """[dim]Internal: re-apply from config (used by systemd). No password needed.[/]"""
     cfg = load_config()
     if cfg is None:
         sys.exit(0)
@@ -268,14 +306,14 @@ def _block_impl(sites):
         click.echo("No new sites added.")
 
 
-@cli.command("block", help="Block site(s) (requires password) — any website, not just suggested")
-@click.argument("sites", nargs=-1)
+@cli.command("block", help="Block [cyan]site(s)[/] ([yellow]🔒 password[/]) — any website, not just suggested\n\n[dim]Examples:[/] [cyan]keep-focused block youtube.com reddit.com[/] [dim]or[/] [cyan]myfavouritegame.com[/]")
+@click.argument("sites", nargs=-1, metavar="SITES")
 def block(sites):
     _block_impl(sites)
 
 
-@cli.command("add", help="Alias for block — any website")
-@click.argument("sites", nargs=-1)
+@cli.command("add", help="[dim]Alias for[/] [cyan]block[/] — any website")
+@click.argument("sites", nargs=-1, metavar="SITES")
 def add(sites):
     _block_impl(sites)
 
@@ -309,14 +347,14 @@ def _unblock_impl(sites):
         click.echo("No sites removed.")
 
 
-@cli.command("unblock", help="Unblock site(s) (requires password)")
-@click.argument("sites", nargs=-1)
+@cli.command("unblock", help="Unblock [cyan]site(s)[/] ([yellow]🔒 password[/])")
+@click.argument("sites", nargs=-1, metavar="SITES")
 def unblock(sites):
     _unblock_impl(sites)
 
 
-@cli.command("remove", help="Alias for unblock")
-@click.argument("sites", nargs=-1)
+@cli.command("remove", help="[dim]Alias for[/] [cyan]unblock[/]")
+@click.argument("sites", nargs=-1, metavar="SITES")
 def remove(sites):
     _unblock_impl(sites)
 
@@ -331,17 +369,17 @@ def _list_impl():
         click.echo(s)
 
 
-@cli.command("list", help="List blocked sites")
+@cli.command("list", help="List [cyan]blocked sites[/] (one per line)")
 def list_cmd():
     _list_impl()
 
 
-@cli.command("ls", help="Alias for list")
+@cli.command("ls", help="[dim]Alias for[/] [cyan]list[/]")
 def ls_cmd():
     _list_impl()
 
 
-@cli.command("enable", help="Enable blocking (requires password)")
+@cli.command("enable", help="Enable blocking ([yellow]🔒 password[/]) — re-applies [dim]/etc/hosts[/]")
 def enable():
     cfg = _require_setup()
     _verify_auth(cfg)
@@ -354,7 +392,7 @@ def enable():
         click.echo("No sites to block. Add some with: keep-focused block <site>")
 
 
-@cli.command("disable", help="Disable blocking (requires password)")
+@cli.command("disable", help="Disable blocking ([yellow]🔒 password[/]) — makes sites reachable")
 def disable():
     cfg = _require_setup()
     _verify_auth(cfg)
@@ -382,13 +420,13 @@ def _do_passwd(new_password: str | None) -> None:
     click.echo("✓ Password changed.")
 
 
-@cli.command("passwd", help="Change password (requires old password)")
-@click.option("--password", "new_password", help="New password non-interactively (min 20 chars)")
+@cli.command("passwd", help="Change password ([yellow]🔒 old password[/] required, [dim]min 20 chars[/])")
+@click.option("--password", "new_password", help="New password non-interactively ([yellow]min 20 chars[/])")
 def passwd(new_password):
     _do_passwd(new_password)
 
 
-@cli.command("uninstall", help="Remove all blocks, autostart and config (requires password)")
+@cli.command("uninstall", help="[red]Remove all blocks[/], autostart and config ([yellow]🔒 password[/])")
 def uninstall():
     cfg = load_config()
     if cfg:
@@ -453,15 +491,15 @@ def _do_update(check: bool, force: bool) -> None:
     sys.exit(rc)
 
 
-@cli.command("update", help="Self-update to latest version (no sudo, no pip, like opencode)")
-@click.option("--check", is_flag=True, help="Check for updates without installing")
+@cli.command("update", help="Self-update to [cyan]latest version[/] ([dim]no sudo, no pip, like opencode[/])")
+@click.option("--check", is_flag=True, help="Check for updates [dim]without installing[/]")
 @click.option("--force", is_flag=True, help="Force reinstall even if up to date")
 def update(check, force):
-    """Self-update via git or install.sh – no sudo, no pip."""
+    """[dim]Self-update via git or install.sh – no sudo, no pip.[/]"""
     _do_update(check, force)
 
 
-@cli.command("version", help="Show version")
+@cli.command("version", help="Show [dim]version[/]")
 def version():
     click.echo(__version__)
 
