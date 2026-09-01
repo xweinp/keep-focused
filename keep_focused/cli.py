@@ -534,4 +534,9 @@ def build_parser():
 
 
 def main() -> None:
+    if len(sys.argv) == 1:
+        from .tui import run_tui
+
+        run_tui()
+        return
     cli(prog_name="keep-focused")
