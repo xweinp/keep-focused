@@ -118,21 +118,40 @@ def _update_via_install_sh() -> bool:
     # We will fetch install.sh content and execute it with cache-busting
     import time
 
-    ts = str(int(time.time()))
-    install_url = f"{RAW_BASE}/main/install.sh?v={ts}"
-    urls = [install_url, install_url.replace("/main/", "/master/")]
     install_content = None
     used_url = None
-    for u in urls:
+    # 1. Try GitHub API first (fresh)
+    api_urls = [
+        "https://api.github.com/repos/xweinp/keep-focused/contents/install.sh?ref=main",
+        "https://api.github.com/repos/xweinp/keep-focused/contents/install.sh?ref=master",
+    ]
+    for u in api_urls:
         try:
-            req = urllib.request.Request(u, headers={"Cache-Control": "no-cache", "Pragma": "no-cache"})
+            req = urllib.request.Request(
+                u, headers={"Accept": "application/vnd.github.v3.raw", "User-Agent": "keep-focused"}
+            )
             with urllib.request.urlopen(req, timeout=10) as resp:
                 install_content = resp.read()
-                used_url = u
+                used_url = u + " (API)"
                 break
         except Exception as e:
             print(f"  ! fetch {u} failed: {e}")
             continue
+    # 2. Fallback to raw with cache-busting
+    if install_content is None:
+        ts = str(int(time.time()))
+        install_url = f"{RAW_BASE}/main/install.sh?v={ts}"
+        urls = [install_url, install_url.replace("/main/", "/master/")]
+        for u in urls:
+            try:
+                req = urllib.request.Request(u, headers={"Cache-Control": "no-cache", "Pragma": "no-cache"})
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    install_content = resp.read()
+                    used_url = u
+                    break
+            except Exception as e:
+                print(f"  ! fetch {u} failed: {e}")
+                continue
     if install_content is None:
         print("  ! Could not fetch install.sh from GitHub.")
         return False
