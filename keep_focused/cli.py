@@ -17,8 +17,8 @@ rc.STYLE_USAGE = "bold"
 rc.STYLE_USAGE_COMMAND = "bold cyan"
 rc.HEADER_TEXT = "🎯 [bold cyan]keep-focused[/] — stay productive  •  [dim]blocks distracting sites system-wide via /etc/hosts[/]"
 rc.FOOTER_TEXT = (
-    "[dim]Run [bold]keep-focused[/] with no args to launch the interactive TUI (like opencode).[/]\n"
-    "[dim]Password (≥20 chars, PBKDF2) required for [cyan]block/unblock/enable/disable/uninstall[/].[/]"
+    "[dim]Password (≥20 chars, PBKDF2) required for [cyan]block/unblock/enable/disable/uninstall[/].[/]\n"
+    "[dim]All blocking is system-wide (Chrome, Firefox, etc.) via /etc/hosts.[/]"
 )
 rc.COMMAND_GROUPS = {
     "keep-focused": [
@@ -88,36 +88,27 @@ def _print_suggested(selected: set[str] | None = None) -> None:
 
 def _epilog() -> str:
     return (
-        "[bold]Examples:[/]  [dim]keep-focused[/] [dim]# TUI[/]  •  "
-        "[dim]keep-focused update[/] [dim]# update[/]  •  "
-        "[dim]keep-focused status[/] •  [dim]block/unblock with 🔒[/]\n"
-        f"[bold]Suggested:[/] [dim]{', '.join(SUGGESTED_SITES)}[/]\n"
-        "[dim]Tip: ↑/↓ + Space to toggle sites in the TUI.[/]"
+        "[bold]Examples:[/]  [dim]keep-focused status[/]  •  "
+        "[dim]keep-focused block youtube.com[/] [dim]# 🔒[/]  •  "
+        "[dim]keep-focused unblock spotify.com[/] •  "
+        "[dim]keep-focused update --check[/]\n"
+        f"[bold]Suggested:[/] [dim]{', '.join(SUGGESTED_SITES)}[/]"
     )
 
 
 @click.group(
     name="keep-focused",
     context_settings=dict(help_option_names=["-h", "--help"]),
-    invoke_without_command=True,
     help=(
         "[bold cyan]keep-focused[/] — block distracting websites [dim]system-wide via /etc/hosts[/]\n\n"
         "Works in [bold]Chrome, Firefox, any browser[/]. "
-        "Run with [bold]no arguments[/] to launch the [cyan]interactive TUI[/] "
-        "(like [italic]opencode[/] / [italic]claude code[/])."
+        "All commands are listed below."
     ),
     epilog=_epilog(),
 )
 @click.version_option(__version__, "--version", "-v", prog_name="keep-focused", message="%(version)s")
-@click.pass_context
-def cli(ctx):
-    """Root group – launch TUI when no subcommand is given."""
-    if ctx.invoked_subcommand is None:
-        # Click already handled --help / --version (exits before here).
-        # For programmatic `CliRunner.invoke(cli, [])` we show help; real CLI with no args
-        # is handled by `main()` which launches TUI before reaching Click.
-        click.echo(ctx.get_help())
-        ctx.exit(0)
+def cli():
+    pass
 
 
 # ---------------------------------------------------------------------------
@@ -543,11 +534,4 @@ def build_parser():
 
 
 def main() -> None:
-    # No arguments → launch interactive TUI (like opencode / claude code)
-    if len(sys.argv) == 1:
-        from .tui import run_tui
-
-        run_tui()
-        return
-
     cli(prog_name="keep-focused")

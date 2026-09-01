@@ -78,24 +78,6 @@ def test_cli_enable_requires_password_now(tmp_env):
     assert json.loads(tmp_env["config"].read_text())["enabled"] is True
 
 
-def test_tui_unblock_requires_password(tmp_env):
-    pw, _ = _setup_cfg(tmp_env, sites=["facebook.com", "x.com"])
-    from keep_focused.tui import _unblock_flow
-
-    # Mock selection to unblock facebook, but wrong password
-    with patch("keep_focused.tui._select_sites_interactive", return_value=["x.com"]):
-        with patch("getpass.getpass", return_value="wrong" * 5):
-            cfg = json.loads(tmp_env["config"].read_text())
-            # Need to pass dict
-            import json as _json
-
-            cfg_dict = _json.loads(tmp_env["config"].read_text())
-            result = _unblock_flow(cfg_dict)
-            # Should not have unblocked
-            data = json.loads(tmp_env["config"].read_text())
-            assert "facebook.com" in data["blocked_sites"]
-
-
 def test_manual_config_edit_is_locked(tmp_env):
     """Config file should be made immutable after save (best-effort)."""
     pw, _ = _setup_cfg(tmp_env)
