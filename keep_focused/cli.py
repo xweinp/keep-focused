@@ -1,43 +1,97 @@
-"""CLI for keep-focused – now powered by Click + Rich."""
+"""CLI for keep-focused – now powered by Click + Rich (with graceful fallback)."""
 
 import sys
 
-import rich_click as click
-import rich_click.rich_click as rc
+try:
+    import rich_click as click
+    import rich_click.rich_click as rc
 
-# ── Rich-Click styling ────────────────────────────────────────────────────────
-rc.USE_RICH_MARKUP = True
-rc.USE_MARKDOWN = False
-rc.SHOW_ARGUMENTS = True
-rc.GROUP_ARGUMENTS_OPTIONS = True
-rc.STYLE_HELPTEXT_FIRST_LINE = "bold cyan"
-rc.STYLE_OPTION_DEFAULT = "cyan"
-rc.STYLE_SWITCH = "bold cyan"
-rc.STYLE_USAGE = "bold"
-rc.STYLE_USAGE_COMMAND = "bold cyan"
-rc.HEADER_TEXT = "🎯 [bold cyan]keep-focused[/] — stay productive  •  [dim]blocks distracting sites system-wide via /etc/hosts[/]"
-rc.FOOTER_TEXT = (
-    "[dim]Run [bold]keep-focused[/] with no args to launch the interactive TUI (like opencode).[/]\n"
-    "[dim]Password (≥20 chars, PBKDF2) required for [cyan]block/unblock/enable/disable/uninstall[/].[/]"
-)
-rc.COMMAND_GROUPS = {
-    "keep-focused": [
-        {"name": "🚀 Getting Started", "commands": ["setup", "status"]},
-        {"name": "🚫 Blocking", "commands": ["block", "add", "unblock", "remove", "list", "ls"]},
-        {"name": "⚙️  Control", "commands": ["enable", "disable"]},
-        {"name": "🔧 System", "commands": ["passwd", "uninstall", "update", "version"]},
-    ]
-}
-rc.OPTION_GROUPS = {
-    "keep-focused": [{"name": "Options", "options": ["--version", "--help"]}],
-    "keep-focused setup": [
-        {"name": "Setup Options", "options": ["--sites", "--password", "--force"]},
-    ],
-    "keep-focused block": [{"name": "Arguments", "options": ["sites"]}],
-    "keep-focused passwd": [{"name": "Options", "options": ["--password"]}],
-    "keep-focused update": [{"name": "Options", "options": ["--check", "--force"]}],
-}
-rc.STYLE_COMMANDS_TABLE_COLUMN_TYPES = {"command": "cyan", "help": "dim"}
+    HAS_RICH_CLICK = True
+except ImportError:
+    try:
+        import click
+
+        HAS_RICH_CLICK = False
+        rc = None
+    except ImportError:
+        # No click at all – provide minimal stub so decorators don't crash;
+        # main() will fall back to argparse build_parser.
+        HAS_RICH_CLICK = False
+        rc = None
+
+        class _DummyClick:  # type: ignore
+            def echo(self, *a, **kw):
+                print(*a, **kw)
+
+            def group(self, *a, **kw):
+                def deco(f):
+                    return f
+
+                return deco
+
+            def command(self, *a, **kw):
+                def deco(f):
+                    return f
+
+                return deco
+
+            def option(self, *a, **kw):
+                def deco(f):
+                    return f
+
+                return deco
+
+            def argument(self, *a, **kw):
+                def deco(f):
+                    return f
+
+                return deco
+
+            def version_option(self, *a, **kw):
+                def deco(f):
+                    return f
+
+                return deco
+
+            def pass_context(self, f):
+                return f
+
+        click = _DummyClick()  # type: ignore
+
+# ── Rich-Click styling (only if available) ──────────────────────────────────
+if HAS_RICH_CLICK and rc is not None:
+    rc.USE_RICH_MARKUP = True
+    rc.USE_MARKDOWN = False
+    rc.SHOW_ARGUMENTS = True
+    rc.GROUP_ARGUMENTS_OPTIONS = True
+    rc.STYLE_HELPTEXT_FIRST_LINE = "bold cyan"
+    rc.STYLE_OPTION_DEFAULT = "cyan"
+    rc.STYLE_SWITCH = "bold cyan"
+    rc.STYLE_USAGE = "bold"
+    rc.STYLE_USAGE_COMMAND = "bold cyan"
+    rc.HEADER_TEXT = "🎯 [bold cyan]keep-focused[/] — stay productive  •  [dim]blocks distracting sites system-wide via /etc/hosts[/]"
+    rc.FOOTER_TEXT = (
+        "[dim]Run [bold]keep-focused[/] with no args to launch the interactive TUI (like opencode).[/]\n"
+        "[dim]Password (≥20 chars, PBKDF2) required for [cyan]block/unblock/enable/disable/uninstall[/].[/]"
+    )
+    rc.COMMAND_GROUPS = {
+        "keep-focused": [
+            {"name": "🚀 Getting Started", "commands": ["setup", "status"]},
+            {"name": "🚫 Blocking", "commands": ["block", "add", "unblock", "remove", "list", "ls"]},
+            {"name": "⚙️  Control", "commands": ["enable", "disable"]},
+            {"name": "🔧 System", "commands": ["passwd", "uninstall", "update", "version"]},
+        ]
+    }
+    rc.OPTION_GROUPS = {
+        "keep-focused": [{"name": "Options", "options": ["--version", "--help"]}],
+        "keep-focused setup": [
+            {"name": "Setup Options", "options": ["--sites", "--password", "--force"]},
+        ],
+        "keep-focused block": [{"name": "Arguments", "options": ["sites"]}],
+        "keep-focused passwd": [{"name": "Options", "options": ["--password"]}],
+        "keep-focused update": [{"name": "Options", "options": ["--check", "--force"]}],
+    }
+    rc.STYLE_COMMANDS_TABLE_COLUMN_TYPES = {"command": "cyan", "help": "dim"}
 
 from . import DEFAULT_SELECTED, SUGGESTED_SITES, __version__
 from .auth import (
@@ -242,8 +296,7 @@ def setup_cmd(ctx, sites_opt, password, force):
     _do_setup(sites_combined, password, force)
 
 
-@cli.command("status", help="Show [cyan]blocked sites[/], [dim]hosts[/] state & [dim]autostart[/] status")
-def status_cmd():
+def _do_status():
     cfg = load_config()
     if cfg is None:
         click.echo("Not set up. Run: keep-focused")
@@ -266,9 +319,13 @@ def status_cmd():
         click.echo("\n✓ Blocking is ACTIVE – listed sites are unreachable in all browsers.")
 
 
-@cli.command("apply", hidden=True)
-def apply_cmd():
-    """[dim]Internal: re-apply from config (used by systemd). No password needed.[/]"""
+@cli.command("status", help="Show [cyan]blocked sites[/], [dim]hosts[/] state & [dim]autostart[/] status")
+def status_cmd():
+    _do_status()
+
+
+def _do_apply():
+    """Internal: re-apply from config (used by systemd). No password needed."""
     cfg = load_config()
     if cfg is None:
         sys.exit(0)
@@ -277,6 +334,12 @@ def apply_cmd():
     except PermissionError:
         click.echo("apply: permission denied (need root)", err=True)
         sys.exit(1)
+
+
+@cli.command("apply", hidden=True)
+def apply_cmd():
+    """[dim]Internal: re-apply from config (used by systemd). No password needed.[/]"""
+    _do_apply()
 
 
 def _block_impl(sites):
@@ -379,8 +442,7 @@ def ls_cmd():
     _list_impl()
 
 
-@cli.command("enable", help="Enable blocking ([yellow]🔒 password[/]) — re-applies [dim]/etc/hosts[/]")
-def enable():
+def _do_enable():
     cfg = _require_setup()
     _verify_auth(cfg)
     cfg["enabled"] = True
@@ -392,14 +454,23 @@ def enable():
         click.echo("No sites to block. Add some with: keep-focused block <site>")
 
 
-@cli.command("disable", help="Disable blocking ([yellow]🔒 password[/]) — makes sites reachable")
-def disable():
+@cli.command("enable", help="Enable blocking ([yellow]🔒 password[/]) — re-applies [dim]/etc/hosts[/]")
+def enable():
+    _do_enable()
+
+
+def _do_disable():
     cfg = _require_setup()
     _verify_auth(cfg)
     cfg["enabled"] = False
     save_config(cfg)
     clear_block()
     click.echo("✓ Blocking disabled. All sites reachable. Enable again with: keep-focused enable")
+
+
+@cli.command("disable", help="Disable blocking ([yellow]🔒 password[/]) — makes sites reachable")
+def disable():
+    _do_disable()
 
 
 def _do_passwd(new_password: str | None) -> None:
@@ -426,8 +497,7 @@ def passwd(new_password):
     _do_passwd(new_password)
 
 
-@cli.command("uninstall", help="[red]Remove all blocks[/], autostart and config ([yellow]🔒 password[/])")
-def uninstall():
+def _do_uninstall():
     cfg = load_config()
     if cfg:
         _verify_auth(cfg)
@@ -484,6 +554,11 @@ def uninstall():
     click.echo("✓ Uninstalled. All blocks removed and autostart disabled.")
 
 
+@cli.command("uninstall", help="[red]Remove all blocks[/], autostart and config ([yellow]🔒 password[/])")
+def uninstall():
+    _do_uninstall()
+
+
 def _do_update(check: bool, force: bool) -> None:
     from .update import perform_update
 
@@ -499,9 +574,13 @@ def update(check, force):
     _do_update(check, force)
 
 
+def _do_version():
+    click.echo(__version__) if hasattr(click, "echo") else print(__version__)
+
+
 @cli.command("version", help="Show [dim]version[/]")
 def version():
-    click.echo(__version__)
+    _do_version()
 
 
 # ---------------------------------------------------------------------------
@@ -591,9 +670,11 @@ def build_parser():
 
     sp.set_defaults(func=_setup_shim)
 
-    sub.add_parser("status", help="Show blocked sites and whether blocking is active").set_defaults(func=lambda args: cli.commands["status"].callback())
+    # For Click-based commands, call the underlying helpers directly
+    # (so build_parser works even when click is dummy / no rich and avoids RichCommand SystemExit)
+    sub.add_parser("status", help="Show blocked sites and whether blocking is active").set_defaults(func=lambda args: _do_status())
     ap = sub.add_parser("apply", help=argparse.SUPPRESS)
-    ap.set_defaults(func=lambda args: cli.commands["apply"].callback())
+    ap.set_defaults(func=lambda args: _do_apply())
     bp = sub.add_parser("block", help="Block site(s) (requires password) — any website, not just suggested")
     bp.add_argument("sites", nargs="*", help="Domains to block (e.g. facebook.com or any custom myfavouritegame.com)")
     bp.set_defaults(func=lambda args: _block_impl(args.sites))
@@ -609,9 +690,9 @@ def build_parser():
     sub.add_parser("list", help="List blocked sites").set_defaults(func=lambda args: _list_impl())
     sub.add_parser("ls", help="Alias for list").set_defaults(func=lambda args: _list_impl())
     ep = sub.add_parser("enable", help="Enable blocking (requires password)")
-    ep.set_defaults(func=lambda args: cli.commands["enable"].callback())
+    ep.set_defaults(func=lambda args: _do_enable())
     dp = sub.add_parser("disable", help="Disable blocking (requires password)")
-    dp.set_defaults(func=lambda args: cli.commands["disable"].callback())
+    dp.set_defaults(func=lambda args: _do_disable())
     pp = sub.add_parser("passwd", help="Change password (requires old password)")
     pp.add_argument("--password", help="New password non-interactively (min 20 chars)")
 
@@ -620,7 +701,7 @@ def build_parser():
 
     pp.set_defaults(func=_passwd_shim)
     up = sub.add_parser("uninstall", help="Remove all blocks, autostart and config (requires password)")
-    up.set_defaults(func=lambda args: cli.commands["uninstall"].callback())
+    up.set_defaults(func=lambda args: _do_uninstall())
     upd = sub.add_parser("update", help="Self-update to latest version (no sudo, no pip, like opencode)")
     upd.add_argument("--check", action="store_true", help="Check for updates without installing")
     upd.add_argument("--force", action="store_true", help="Force reinstall even if up to date")
@@ -629,7 +710,7 @@ def build_parser():
         _do_update(args.check, args.force)
 
     upd.set_defaults(func=_update_shim)
-    sub.add_parser("version", help="Show version").set_defaults(func=lambda args: click.echo(__version__))
+    sub.add_parser("version", help="Show version").set_defaults(func=lambda args: _do_version())
 
     return _Shim(cli, p)
 
@@ -642,10 +723,34 @@ def main() -> None:
         run_tui()
         return
 
-    # Delegate to Click group; it will handle all subcommands and exit codes.
-    # Use prog_name="keep-focused" so help shows correct name.
+    # If Click is available (real click or rich_click), delegate to it
+    # Dummy fallback has cli as plain function without .main/.invoke
+    is_click_available = False
     try:
-        cli(prog_name="keep-focused")
+        is_click_available = hasattr(cli, "main") or hasattr(cli, "invoke") or hasattr(cli, "parse_args")
+    except Exception:
+        is_click_available = False
+
+    if is_click_available and click is not None and not isinstance(click, type) and hasattr(click, "echo"):
+        # Real Click (plain or rich) – use it
+        try:
+            # Check if cli is a Click Group (has .main)
+            if hasattr(cli, "main"):
+                cli(prog_name="keep-focused")
+                return
+        except SystemExit:
+            raise
+        except Exception:
+            pass
+
+    # Fallback to argparse (when click not installed)
+    parser = build_parser()
+    try:
+        args = parser.parse_args()
     except SystemExit as e:
-        # Re-raise to preserve exit code for callers / tests
         raise
+    if hasattr(args, "func"):
+        args.func(args)
+    else:
+        parser.print_help()
+        sys.exit(0)

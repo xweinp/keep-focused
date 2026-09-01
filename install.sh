@@ -41,6 +41,44 @@ if [ "$PY_MAJOR" -lt 3 ] || { [ "$PY_MAJOR" -eq 3 ] && [ "$PY_MINOR" -lt 9 ]; };
 fi
 dim "✓ python3 $PY_VER found"
 
+# 1.5 Ensure Python deps for rich help (optional – CLI falls back to plain if missing)
+# We need click, rich, rich-click for the new pretty help (grouped panels, colors).
+# Install is best-effort, no sudo pip, --user only. If it fails, CLI still works plain.
+for _pkg in "click:rich_click" "rich:rich" "rich-click:rich_click"; do
+  _pip_pkg="${_pkg%%:*}"
+  _import_name="${_pkg##*:}"
+  if python3 -c "import $_import_name" 2>/dev/null; then
+    dim "✓ $_import_name found"
+  else
+    dim "→ Installing Python dep: $_pip_pkg (pip --user, no sudo)..."
+    _installed=0
+    # Try python3 -m pip
+    if python3 -m pip --version >/dev/null 2>&1; then
+      if python3 -m pip install --user --break-system-packages -q "$_pip_pkg" 2>/dev/null; then _installed=1; fi
+    fi
+    # Try pip3
+    if [ "$_installed" -eq 0 ] && command -v pip3 >/dev/null 2>&1; then
+      if pip3 install --user --break-system-packages -q "$_pip_pkg" 2>/dev/null; then _installed=1; fi
+    fi
+    # Try Debian whl fallback
+    if [ "$_installed" -eq 0 ] && ls /usr/share/python-wheels/pip-*.whl >/dev/null 2>&1; then
+      _whl="$(ls /usr/share/python-wheels/pip-*.whl 2>/dev/null | head -1)"
+      if [ -n "$_whl" ]; then
+        if python3 -c "import sys; sys.path.insert(0, '$_whl'); from pip._internal.cli.main import main as pip_main; import sys; sys.argv=['pip','install','--user','--break-system-packages','-q','$_pip_pkg']; pip_main()" 2>/dev/null; then _installed=1; fi
+      fi
+    fi
+    # Try apt (may need sudo, but we try without)
+    if [ "$_installed" -eq 0 ] && command -v apt-get >/dev/null 2>&1; then
+      if apt-get update -qq 2>/dev/null && apt-get install -y "python3-${_pip_pkg//-/_}" "python3-$_pip_pkg" 2>/dev/null; then _installed=1; fi
+    fi
+    if python3 -c "import $_import_name" 2>/dev/null; then
+      green "✓ $_import_name installed"
+    else
+      yellow "⚠ Could not install $_import_name – CLI will use plain help (still works)"
+    fi
+  fi
+done
+
 # 2. Determine source
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
 SRC_DIR=""
