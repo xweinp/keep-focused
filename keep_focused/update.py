@@ -44,13 +44,35 @@ def _find_repo_root() -> Path | None:
 
 
 def _fetch_remote_version() -> str | None:
-    """Fetch remote __version__ via raw GitHub with cache-busting."""
+    """Fetch remote __version__ via GitHub API (fresh) with raw fallback and cache-busting."""
     import time
 
+    # 1. Try GitHub API first – not CDN-cached, returns fresh version immediately after push
+    api_urls = [
+        "https://api.github.com/repos/xweinp/keep-focused/contents/keep_focused/__init__.py?ref=main",
+        "https://api.github.com/repos/xweinp/keep-focused/contents/keep_focused/__init__.py?ref=master",
+    ]
+    for u in api_urls:
+        try:
+            req = urllib.request.Request(
+                u,
+                headers={"Accept": "application/vnd.github.v3.raw", "User-Agent": "keep-focused"},
+            )
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                data = resp.read().decode("utf-8", errors="ignore")
+                for line in data.splitlines():
+                    line = line.strip()
+                    if line.startswith("__version__"):
+                        parts = line.split("=")
+                        if len(parts) == 2:
+                            v = parts[1].strip().strip('"').strip("'")
+                            return v
+        except Exception:
+            continue
+
+    # 2. Fallback to raw with cache-busting (CDN-cached for 300s)
     ts = str(int(time.time()))
-    # Cache-bust: raw.githubusercontent.com is CDN-cached for 300s, add ?v= to bust
     url = f"{RAW_BASE}/main/keep_focused/__init__.py?v={ts}"
-    # Also try master branch fallback
     urls = [url, url.replace("/main/", "/master/")]
     for u in urls:
         try:
