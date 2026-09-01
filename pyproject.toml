@@ -14,7 +14,7 @@ classifiers = [
     "Topic :: Internet",
     "Topic :: Utilities",
 ]
-dependencies = []
+dependencies = ["click>=8.1"]
 
 [project.urls]
 Homepage = "https://github.com/xweinp/keep-focused"

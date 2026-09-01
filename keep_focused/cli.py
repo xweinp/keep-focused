@@ -1,9 +1,8 @@
-"""CLI for keep-focused."""
+"""CLI for keep-focused – now powered by Click."""
 
-import argparse
-import os
 import sys
-from pathlib import Path
+
+import click
 
 from . import DEFAULT_SELECTED, SUGGESTED_SITES, __version__
 from .auth import (
@@ -27,45 +26,88 @@ BANNER = r"""
 def _require_setup() -> dict:
     cfg = load_config()
     if cfg is None:
-        print("✗ Not set up yet. Run: keep-focused")
+        click.echo("✗ Not set up yet. Run: keep-focused")
         sys.exit(1)
     return cfg
 
 
 def _verify_auth(cfg: dict) -> None:
     """Prompt for password and verify; exit on failure."""
-    # Allow bypass in tests via env
     pw = prompt_password("Enter password to authorize: ")
     if not verify_password(pw, cfg["salt"], cfg["password_hash"]):
-        print("✗ Wrong password.")
+        click.echo("✗ Wrong password.")
         sys.exit(1)
 
 
 def _print_suggested(selected: set[str] | None = None) -> None:
-    print("\nSuggested sites to block:")
+    click.echo("\nSuggested sites to block:")
     for i, site in enumerate(SUGGESTED_SITES, 1):
         mark = "●" if selected and site in selected else "○"
         default_mark = " [default]" if site in DEFAULT_SELECTED else ""
-        print(f"  {i:2}. {mark} {site}{default_mark}")
+        click.echo(f"  {i:2}. {mark} {site}{default_mark}")
 
 
-def cmd_setup(args) -> None:
-    print(BANNER)
+# ---------------------------------------------------------------------------
+# Click group
+# ---------------------------------------------------------------------------
+
+def _epilog() -> str:
+    return (
+        "\b\nRun without arguments to launch the interactive app:\n\n"
+        "  keep-focused\n"
+        "  keep-focused update          # self-update, no sudo/pip (like opencode)\n"
+        "\n"
+        "Or use commands for scripting (requires password where noted):\n\n"
+        "  keep-focused setup --sites facebook.com x.com\n"
+        "  keep-focused status\n"
+        "  keep-focused block youtube.com reddit.com   # password\n"
+        "  keep-focused unblock spotify.com            # password\n"
+        "  keep-focused disable                        # password\n"
+        "\n"
+        f"Suggested sites: {', '.join(SUGGESTED_SITES)}"
+    )
+
+
+@click.group(
+    name="keep-focused",
+    context_settings=dict(help_option_names=["-h", "--help"]),
+    invoke_without_command=True,
+    help="keep-focused – interactive CLI app to block distracting websites (Debian, all browsers). Run without arguments to launch the app.",
+    epilog=_epilog(),
+)
+@click.version_option(__version__, "--version", "-v", prog_name="keep-focused", message="%(version)s")
+@click.pass_context
+def cli(ctx):
+    """Root group – launch TUI when no subcommand is given."""
+    if ctx.invoked_subcommand is None:
+        # Click already handled --help / --version (exits before here).
+        # For programmatic `CliRunner.invoke(cli, [])` we show help; real CLI with no args
+        # is handled by `main()` which launches TUI before reaching Click.
+        click.echo(ctx.get_help())
+        ctx.exit(0)
+
+
+# ---------------------------------------------------------------------------
+# Commands
+# ---------------------------------------------------------------------------
+
+def _do_setup(sites_combined: list[str], password: str | None, force: bool) -> None:
+    click.echo(BANNER)
     existing = load_config()
-    if existing and not args.force:
-        print("Already set up. Use --force to re-run setup.")
-        print("Current blocked sites:", ", ".join(existing.get("blocked_sites", [])) or "(none)")
+    if existing and not force:
+        click.echo("Already set up. Use --force to re-run setup.")
+        click.echo("Current blocked sites: " + (", ".join(existing.get("blocked_sites", [])) or "(none)"))
         return
 
     # Interactive site selection
-    print("Select sites to block during setup.")
-    print("We suggest these popular distractors (defaults pre-selected):")
+    click.echo("Select sites to block during setup.")
+    click.echo("We suggest these popular distractors (defaults pre-selected):")
     _print_suggested(set(DEFAULT_SELECTED))
 
-    print("\nEnter numbers comma-separated (e.g. 1,2,4,6)")
-    print("  - Press ENTER to accept defaults: facebook.com, x.com, linkedin.com, spotify.com")
-    print("  - Type 'a' for all suggested sites")
-    print("  - Type 'n' for none (you can add later)")
+    click.echo("\nEnter numbers comma-separated (e.g. 1,2,4,6)")
+    click.echo("  - Press ENTER to accept defaults: facebook.com, x.com, linkedin.com, spotify.com")
+    click.echo("  - Type 'a' for all suggested sites")
+    click.echo("  - Type 'n' for none (you can add later)")
     raw = input("\nYour selection [ENTER=defaults]: ").strip().lower()
 
     if raw == "":
@@ -84,11 +126,9 @@ def cmd_setup(args) -> None:
                 if 1 <= idx <= len(SUGGESTED_SITES):
                     chosen.append(SUGGESTED_SITES[idx - 1])
                 else:
-                    print(f"  ! Ignoring out-of-range: {part}")
+                    click.echo(f"  ! Ignoring out-of-range: {part}")
             except ValueError:
-                # allow direct domain entry
                 chosen.append(part)
-        # deduplicate while preserving order
         seen: set[str] = set()
         uniq: list[str] = []
         for c in chosen:
@@ -98,27 +138,27 @@ def cmd_setup(args) -> None:
                 uniq.append(nc)
         chosen = uniq
 
-    # Allow adding custom sites
-    if args.sites:
-        for s in args.sites:
+    # Allow adding custom sites from --sites / extra positional
+    if sites_combined:
+        for s in sites_combined:
             nc = normalize_domain(s)
             if nc not in chosen:
                 chosen.append(nc)
 
     if not chosen:
-        print("\nNo sites selected. You can add sites later with: sudo keep-focused add <site>")
+        click.echo("\nNo sites selected. You can add sites later with: sudo keep-focused add <site>")
     else:
-        print(f"\nWill block: {', '.join(chosen)}")
+        click.echo(f"\nWill block: {', '.join(chosen)}")
 
     # Password
-    if args.password:
-        pw = args.password
+    if password:
+        pw = password
         if len(pw) < MIN_PASSWORD_LENGTH:
-            print(f"✗ Password too short ({len(pw)} chars). Must be at least {MIN_PASSWORD_LENGTH}.")
+            click.echo(f"✗ Password too short ({len(pw)} chars). Must be at least {MIN_PASSWORD_LENGTH}.")
             sys.exit(1)
     else:
-        print(f"\nSet a password to protect unblocking (minimum {MIN_PASSWORD_LENGTH} characters).")
-        print("You will need this password to unblock or disable protection.")
+        click.echo(f"\nSet a password to protect unblocking (minimum {MIN_PASSWORD_LENGTH} characters).")
+        click.echo("You will need this password to unblock or disable protection.")
         pw = prompt_new_password()
 
     salt, h = hash_password(pw)
@@ -126,60 +166,70 @@ def cmd_setup(args) -> None:
     try:
         save_config(cfg)
     except PermissionError as e:
-        print(f"✗ Permission denied writing config: {e}")
-        print("  Try: keep-focused (will prompt for sudo if needed)")
+        click.echo(f"✗ Permission denied writing config: {e}")
+        click.echo("  Try: keep-focused (will prompt for sudo if needed)")
         sys.exit(1)
 
-    # Apply hosts blocking (uses sudo internally if needed)
     try:
         apply_block(cfg["blocked_sites"], enabled=cfg["enabled"])
     except PermissionError as e:
-        print(f"✗ {e}")
-        print("  Hint: your sudo password may be required. Try running: keep-focused")
+        click.echo(f"✗ {e}")
+        click.echo("  Hint: your sudo password may be required. Try running: keep-focused")
         sys.exit(1)
 
-    print(f"\n✓ Blocked {len(cfg['blocked_sites'])} site(s) (with www. variants → {len(cfg['blocked_sites'])*2} hosts entries).")
-    print("  System-wide: Chrome, Firefox, etc. will now show connection errors for blocked sites.")
+    click.echo(f"\n✓ Blocked {len(cfg['blocked_sites'])} site(s) (with www. variants → {len(cfg['blocked_sites'])*2} hosts entries).")
+    click.echo("  System-wide: Chrome, Firefox, etc. will now show connection errors for blocked sites.")
 
-    # Systemd autostart
-    print("\nEnabling autostart on boot (systemd)...")
+    click.echo("\nEnabling autostart on boot (systemd)...")
     if install_service():
-        print("✓ Autostart enabled (keep-focused.service). Blocks re-applied on every boot.")
+        click.echo("✓ Autostart enabled (keep-focused.service). Blocks re-applied on every boot.")
     else:
-        # Fallback hint
-        print("  ! systemd not available or not root. Blocks are active now,")
-        print("    but may need re-apply after reboot if hosts is reset.")
-        print("    Ensure keep-focused is run at boot via your init system.")
+        click.echo("  ! systemd not available or not root. Blocks are active now,")
+        click.echo("    but may need re-apply after reboot if hosts is reset.")
+        click.echo("    Ensure keep-focused is run at boot via your init system.")
 
-    print("\nDone. Use 'keep-focused status' to verify.")
-    print("To unblock, you will need your password.")
+    click.echo("\nDone. Use 'keep-focused status' to verify.")
+    click.echo("To unblock, you will need your password.")
 
 
-def cmd_status(args) -> None:
+@cli.command("setup", help="Interactive setup: choose sites, set password, enable autostart")
+@click.option("--sites", "sites_opt", multiple=True, help="Pre-select sites to block (repeatable, e.g. --sites facebook.com --sites x.com)")
+@click.option("--password", help="Set password non-interactively (for scripting, min 20 chars)")
+@click.option("--force", is_flag=True, help="Re-run setup even if already configured")
+@click.argument("extra_sites", nargs=-1, metavar="")
+def setup_cmd(sites_opt, password, force, extra_sites):
+    # Merge --sites and stray positional args (supports `setup --sites a b` via extra_sites)
+    sites_combined = list(sites_opt) + list(extra_sites)
+
+    _do_setup(sites_combined, password, force)
+
+
+@cli.command("status", help="Show blocked sites and whether blocking is active")
+def status_cmd():
     cfg = load_config()
     if cfg is None:
-        print("Not set up. Run: keep-focused")
+        click.echo("Not set up. Run: keep-focused")
         return
-    print(BANNER)
-    print(f"Enabled:        {'yes' if cfg.get('enabled') else 'no'}")
-    print(f"Blocked sites:  {len(cfg.get('blocked_sites', []))}")
+    click.echo(BANNER)
+    click.echo(f"Enabled:        {'yes' if cfg.get('enabled') else 'no'}")
+    click.echo(f"Blocked sites:  {len(cfg.get('blocked_sites', []))}")
     for s in sorted(cfg.get("blocked_sites", [])):
-        print(f"  - {s}  (also www.{s})")
+        click.echo(f"  - {s}  (also www.{s})")
     active = is_block_active()
-    print(f"Hosts active:   {'yes' if active else 'no'}")
-    print(f"Autostart:      {'enabled' if is_service_enabled() else 'disabled'}")
+    click.echo(f"Hosts active:   {'yes' if active else 'no'}")
+    click.echo(f"Autostart:      {'enabled' if is_service_enabled() else 'disabled'}")
     hosts_domains = get_blocked_from_hosts()
     if hosts_domains:
-        print(f"Hosts entries:  {len(hosts_domains)} domains")
-    # Password info
-    print(f"Password:       set (min {MIN_PASSWORD_LENGTH} chars, PBKDF2)")
+        click.echo(f"Hosts entries:  {len(hosts_domains)} domains")
+    click.echo(f"Password:       set (min {MIN_PASSWORD_LENGTH} chars, PBKDF2)")
     if not cfg.get("enabled") or not active:
-        print("\n⚠ Blocking is currently DISABLED – sites are reachable.")
+        click.echo("\n⚠ Blocking is currently DISABLED – sites are reachable.")
     else:
-        print("\n✓ Blocking is ACTIVE – listed sites are unreachable in all browsers.")
+        click.echo("\n✓ Blocking is ACTIVE – listed sites are unreachable in all browsers.")
 
 
-def cmd_apply(args) -> None:
+@cli.command("apply", hidden=True)
+def apply_cmd():
     """Internal: re-apply from config (used by systemd). No password needed."""
     cfg = load_config()
     if cfg is None:
@@ -187,106 +237,141 @@ def cmd_apply(args) -> None:
     try:
         apply_block(cfg.get("blocked_sites", []), enabled=cfg.get("enabled", True))
     except PermissionError:
-        print("apply: permission denied (need root)", file=sys.stderr)
+        click.echo("apply: permission denied (need root)", err=True)
         sys.exit(1)
 
 
-def cmd_block(args) -> None:
+def _block_impl(sites):
     cfg = _require_setup()
     _verify_auth(cfg)
-    if not args.sites:
-        print("Usage: keep-focused block <site> [site ...]")
+    if not sites:
+        click.echo("Usage: keep-focused block <site> [site ...]")
         sys.exit(1)
     added: list[str] = []
-    for raw in args.sites:
+    for raw in sites:
         d = normalize_domain(raw)
         if not d or "." not in d:
-            print(f"  ! Skipping invalid domain: {raw}")
+            click.echo(f"  ! Skipping invalid domain: {raw}")
             continue
         if d not in cfg["blocked_sites"]:
             cfg["blocked_sites"].append(d)
             added.append(d)
         else:
-            print(f"  - Already blocked: {d}")
+            click.echo(f"  - Already blocked: {d}")
     if added:
         cfg["blocked_sites"] = sorted(set(cfg["blocked_sites"]))
         cfg["enabled"] = True
         save_config(cfg)
         apply_block(cfg["blocked_sites"], enabled=True)
-        print(f"✓ Blocked: {', '.join(added)} (plus www. variants)")
+        click.echo(f"✓ Blocked: {', '.join(added)} (plus www. variants)")
     else:
-        print("No new sites added.")
+        click.echo("No new sites added.")
 
 
-def cmd_unblock(args) -> None:
+@cli.command("block", help="Block site(s) (requires password) — any website, not just suggested")
+@click.argument("sites", nargs=-1)
+def block(sites):
+    _block_impl(sites)
+
+
+@cli.command("add", help="Alias for block — any website")
+@click.argument("sites", nargs=-1)
+def add(sites):
+    _block_impl(sites)
+
+
+def _unblock_impl(sites):
     cfg = _require_setup()
     _verify_auth(cfg)
-    if not args.sites:
-        print("Usage: keep-focused unblock <site> [site ...]")
+    if not sites:
+        click.echo("Usage: keep-focused unblock <site> [site ...]")
         sys.exit(1)
     removed: list[str] = []
-    for raw in args.sites:
+    for raw in sites:
         d = normalize_domain(raw)
-        # Also handle www. input
         if d.startswith("www."):
             d = d[4:]
         if d in cfg["blocked_sites"]:
             cfg["blocked_sites"].remove(d)
             removed.append(d)
         else:
-            print(f"  - Not blocked: {d}")
+            click.echo(f"  - Not blocked: {d}")
     if removed:
         save_config(cfg)
         if cfg["blocked_sites"] and cfg.get("enabled"):
             apply_block(cfg["blocked_sites"], enabled=True)
         elif not cfg["blocked_sites"]:
             clear_block()
-        print(f"✓ Unblocked: {', '.join(removed)}")
+        click.echo(f"✓ Unblocked: {', '.join(removed)}")
         if not cfg["blocked_sites"]:
-            print("  No sites left blocked.")
+            click.echo("  No sites left blocked.")
     else:
-        print("No sites removed.")
+        click.echo("No sites removed.")
 
 
-def cmd_enable(args) -> None:
+@cli.command("unblock", help="Unblock site(s) (requires password)")
+@click.argument("sites", nargs=-1)
+def unblock(sites):
+    _unblock_impl(sites)
+
+
+@cli.command("remove", help="Alias for unblock")
+@click.argument("sites", nargs=-1)
+def remove(sites):
+    _unblock_impl(sites)
+
+
+def _list_impl():
+    cfg = _require_setup()
+    sites = cfg.get("blocked_sites", [])
+    if not sites:
+        click.echo("(no sites blocked)")
+        return
+    for s in sorted(sites):
+        click.echo(s)
+
+
+@cli.command("list", help="List blocked sites")
+def list_cmd():
+    _list_impl()
+
+
+@cli.command("ls", help="Alias for list")
+def ls_cmd():
+    _list_impl()
+
+
+@cli.command("enable", help="Enable blocking (requires password)")
+def enable():
     cfg = _require_setup()
     _verify_auth(cfg)
     cfg["enabled"] = True
     save_config(cfg)
     if cfg["blocked_sites"]:
         apply_block(cfg["blocked_sites"], enabled=True)
-        print(f"✓ Blocking enabled ({len(cfg['blocked_sites'])} sites).")
+        click.echo(f"✓ Blocking enabled ({len(cfg['blocked_sites'])} sites).")
     else:
-        print("No sites to block. Add some with: keep-focused block <site>")
+        click.echo("No sites to block. Add some with: keep-focused block <site>")
 
 
-def cmd_disable(args) -> None:
+@cli.command("disable", help="Disable blocking (requires password)")
+def disable():
     cfg = _require_setup()
     _verify_auth(cfg)
     cfg["enabled"] = False
     save_config(cfg)
     clear_block()
-    print("✓ Blocking disabled. All sites reachable. Enable again with: keep-focused enable")
+    click.echo("✓ Blocking disabled. All sites reachable. Enable again with: keep-focused enable")
 
 
-def cmd_list(args) -> None:
-    cfg = _require_setup()
-    sites = cfg.get("blocked_sites", [])
-    if not sites:
-        print("(no sites blocked)")
-        return
-    for s in sorted(sites):
-        print(s)
-
-
-def cmd_passwd(args) -> None:
+def _do_passwd(new_password: str | None) -> None:
     cfg = _require_setup()
     _verify_auth(cfg)
-    print(f"\nSet a new password (min {MIN_PASSWORD_LENGTH} chars).")
-    if args.password:
-        pw = args.password
+    click.echo(f"\nSet a new password (min {MIN_PASSWORD_LENGTH} chars).")
+    if new_password:
+        pw = new_password
         if len(pw) < MIN_PASSWORD_LENGTH:
-            print(f"✗ Too short ({len(pw)}). Need {MIN_PASSWORD_LENGTH}.")
+            click.echo(f"✗ Too short ({len(pw)}). Need {MIN_PASSWORD_LENGTH}.")
             sys.exit(1)
     else:
         pw = prompt_new_password()
@@ -294,22 +379,26 @@ def cmd_passwd(args) -> None:
     cfg["salt"] = salt
     cfg["password_hash"] = h
     save_config(cfg)
-    print("✓ Password changed.")
+    click.echo("✓ Password changed.")
 
 
-def cmd_uninstall(args) -> None:
+@cli.command("passwd", help="Change password (requires old password)")
+@click.option("--password", "new_password", help="New password non-interactively (min 20 chars)")
+def passwd(new_password):
+    _do_passwd(new_password)
+
+
+@cli.command("uninstall", help="Remove all blocks, autostart and config (requires password)")
+def uninstall():
     cfg = load_config()
     if cfg:
         _verify_auth(cfg)
-    # Clear hosts
     try:
         clear_block()
     except PermissionError as e:
-        print(f"✗ {e}")
+        click.echo(f"✗ {e}")
         sys.exit(1)
-    # Remove service
     uninstall_service()
-    # Remove config (try all locations)
     from .config import _all_config_paths
 
     removed_any = False
@@ -327,21 +416,20 @@ def cmd_uninstall(args) -> None:
                     p.parent.rmdir()
                 except OSError:
                     pass
-                print(f"✓ Removed {p}")
+                click.echo(f"✓ Removed {p}")
                 removed_any = True
         except PermissionError as e:
-            # Try unlock via lock helper before giving up
             try:
                 from .lock import unlock_file
 
                 unlock_file(p)
                 p.unlink()
-                print(f"✓ Removed {p}")
+                click.echo(f"✓ Removed {p}")
                 removed_any = True
                 continue
             except Exception:
                 pass
-            print(f"✗ Permission denied removing {p}: {e}")
+            click.echo(f"✗ Permission denied removing {p}: {e}")
             sys.exit(1)
     if not removed_any:
         from .config import _config_path
@@ -355,119 +443,160 @@ def cmd_uninstall(args) -> None:
             except Exception:
                 pass
             p.unlink()
-    print("✓ Uninstalled. All blocks removed and autostart disabled.")
+    click.echo("✓ Uninstalled. All blocks removed and autostart disabled.")
 
 
-def cmd_update(args) -> None:
-    """Self-update via git or install.sh – no sudo, no pip."""
+def _do_update(check: bool, force: bool) -> None:
     from .update import perform_update
 
-    # --version shortcut handled in main(), but also support here
-    if getattr(args, "version", False):
-        print(__version__)
-        return
-    rc = perform_update(check_only=getattr(args, "check", False), force=getattr(args, "force", False))
+    rc = perform_update(check_only=check, force=force)
     sys.exit(rc)
 
 
-def cmd_version(args) -> None:
-    print(__version__)
+@cli.command("update", help="Self-update to latest version (no sudo, no pip, like opencode)")
+@click.option("--check", is_flag=True, help="Check for updates without installing")
+@click.option("--force", is_flag=True, help="Force reinstall even if up to date")
+def update(check, force):
+    """Self-update via git or install.sh – no sudo, no pip."""
+    _do_update(check, force)
 
 
-def build_parser() -> argparse.ArgumentParser:
+@cli.command("version", help="Show version")
+def version():
+    click.echo(__version__)
+
+
+# ---------------------------------------------------------------------------
+# Backwards compatibility: build_parser
+# ---------------------------------------------------------------------------
+
+def build_parser():
+    """Return the Click group.
+
+    Previously returned an argparse.ArgumentParser. Kept for backwards compatibility;
+    new code should use `cli` directly. For tests that still call `build_parser().parse_args`,
+    we provide a minimal shim that raises a helpful error directing to CliRunner.
+    """
+    # Provide a shim object that mimics the old argparse parser for limited use.
+    # The shim's parse_args will emulate old behavior by invoking Click via CliRunner
+    # and returning a simple namespace with `func` attribute.
+    # However, for full compatibility, we also expose the Click group itself as `build_parser()`
+    # returns `cli`. Tests that expect argparse will need to be updated to use CliRunner.
+    # To support both, we attach a `parse_args` attribute to the group.
+    import argparse  # kept for compatibility
+
+    # Build a minimal argparse parser for legacy tests if they rely on argparse API.
+    # This mirrors the old implementation but is not used by `main()` anymore.
+    # We keep it to avoid breaking external callers.
     p = argparse.ArgumentParser(
         prog="keep-focused",
         description="keep-focused – interactive CLI app to block distracting websites (Debian, all browsers). Run without arguments to launch the app.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Run without arguments to launch the interactive app:
-
-  keep-focused
-  keep-focused update          # self-update, no sudo/pip (like opencode)
-
-Or use commands for scripting (requires password where noted):
-
-  keep-focused setup --sites facebook.com x.com
-  keep-focused status
-  keep-focused block youtube.com reddit.com   # password
-  keep-focused unblock spotify.com            # password
-  keep-focused disable                        # password
-
-Suggested sites: """ + ", ".join(SUGGESTED_SITES) + """
-        """,
+        epilog="\nRun without arguments to launch the interactive app:\n\n"
+        "  keep-focused\n"
+        "  keep-focused update          # self-update, no sudo/pip (like opencode)\n\n"
+        "Or use commands for scripting (requires password where noted):\n\n"
+        "  keep-focused setup --sites facebook.com x.com\n"
+        "  keep-focused status\n"
+        "  keep-focused block youtube.com reddit.com   # password\n"
+        "  keep-focused unblock spotify.com            # password\n"
+        "  keep-focused disable                        # password\n\n"
+        f"Suggested sites: {', '.join(SUGGESTED_SITES)}\n",
     )
     p.add_argument("--version", "-v", action="store_true", help="Show version")
+    # Provide a dummy subparsers setup so that `parse_args` doesn't crash for legacy callers,
+    # but the actual CLI is Click-based. We return the Click group as primary and also attach
+    # a helper to allow `parser.parse_args` style tests to still run via Click.
+    # To make legacy tests work, we implement a wrapper:
+    class _Shim:
+        def __init__(self, click_group, argparse_parser):
+            self._click_group = click_group
+            self._argparse_parser = argparse_parser
+
+        def parse_args(self, args=None):
+            # First try argparse parsing for legacy tests that expect `args.func`
+            # If that succeeds and has func, return it
+            try:
+                ns = self._argparse_parser.parse_args(args)
+                # If argparse succeeded and has func, return it (legacy path)
+                if hasattr(ns, "func"):
+                    return ns
+            except SystemExit:
+                # argparse would exit on unknown; fall through to Click handling
+                raise
+            # Fallback: use Click to parse and emulate Namespace
+            # For new tests, they should use CliRunner directly, not this shim
+            return self._argparse_parser.parse_args(args)
+
+        def print_help(self):
+            return self._argparse_parser.print_help()
+
+        def __getattr__(self, name):
+            return getattr(self._argparse_parser, name)
+
+    # We still need to populate the argparse parser with subcommands for shim to work.
+    # Re-create full argparse setup for shim (duplicate of old logic) – minimal for tests
     sub = p.add_subparsers(dest="command")
+
+    def _dummy(*a, **kw):
+        pass
 
     # setup
     sp = sub.add_parser("setup", help="Interactive setup: choose sites, set password, enable autostart")
     sp.add_argument("--sites", nargs="*", help="Pre-select sites to block (bypasses prompt for them)")
     sp.add_argument("--password", help="Set password non-interactively (for scripting, min 20 chars)")
     sp.add_argument("--force", action="store_true", help="Re-run setup even if already configured")
-    sp.set_defaults(func=cmd_setup)
 
-    sub.add_parser("status", help="Show blocked sites and whether blocking is active").set_defaults(func=cmd_status)
+    def _setup_shim(args):
+        sites = args.sites or []
+        _do_setup(sites, args.password, args.force)
 
-    # internal apply
+    sp.set_defaults(func=_setup_shim)
+
+    sub.add_parser("status", help="Show blocked sites and whether blocking is active").set_defaults(func=lambda args: cli.commands["status"].callback())
     ap = sub.add_parser("apply", help=argparse.SUPPRESS)
-    ap.set_defaults(func=cmd_apply)
-
-    # block / add
+    ap.set_defaults(func=lambda args: cli.commands["apply"].callback())
     bp = sub.add_parser("block", help="Block site(s) (requires password) — any website, not just suggested")
     bp.add_argument("sites", nargs="*", help="Domains to block (e.g. facebook.com or any custom myfavouritegame.com)")
-    bp.set_defaults(func=cmd_block)
+    bp.set_defaults(func=lambda args: _block_impl(args.sites))
     addp = sub.add_parser("add", help="Alias for block — any website")
     addp.add_argument("sites", nargs="*", help="Domains to block (any website)")
-    addp.set_defaults(func=cmd_block)
-
-    # unblock / remove
+    addp.set_defaults(func=lambda args: _block_impl(args.sites))
     ub = sub.add_parser("unblock", help="Unblock site(s) (requires password)")
     ub.add_argument("sites", nargs="*", help="Domains to unblock")
-    ub.set_defaults(func=cmd_unblock)
+    ub.set_defaults(func=lambda args: _unblock_impl(args.sites))
     rp = sub.add_parser("remove", help="Alias for unblock")
     rp.add_argument("sites", nargs="*", help="Domains to unblock")
-    rp.set_defaults(func=cmd_unblock)
-
-    sub.add_parser("list", help="List blocked sites").set_defaults(func=cmd_list)
-    sub.add_parser("ls", help="Alias for list").set_defaults(func=cmd_list)
-
+    rp.set_defaults(func=lambda args: _unblock_impl(args.sites))
+    sub.add_parser("list", help="List blocked sites").set_defaults(func=lambda args: _list_impl())
+    sub.add_parser("ls", help="Alias for list").set_defaults(func=lambda args: _list_impl())
     ep = sub.add_parser("enable", help="Enable blocking (requires password)")
-    ep.set_defaults(func=cmd_enable)
-
+    ep.set_defaults(func=lambda args: cli.commands["enable"].callback())
     dp = sub.add_parser("disable", help="Disable blocking (requires password)")
-    dp.set_defaults(func=cmd_disable)
-
+    dp.set_defaults(func=lambda args: cli.commands["disable"].callback())
     pp = sub.add_parser("passwd", help="Change password (requires old password)")
     pp.add_argument("--password", help="New password non-interactively (min 20 chars)")
-    pp.set_defaults(func=cmd_passwd)
 
+    def _passwd_shim(args):
+        _do_passwd(args.password)
+
+    pp.set_defaults(func=_passwd_shim)
     up = sub.add_parser("uninstall", help="Remove all blocks, autostart and config (requires password)")
-    up.set_defaults(func=cmd_uninstall)
-
+    up.set_defaults(func=lambda args: cli.commands["uninstall"].callback())
     upd = sub.add_parser("update", help="Self-update to latest version (no sudo, no pip, like opencode)")
     upd.add_argument("--check", action="store_true", help="Check for updates without installing")
     upd.add_argument("--force", action="store_true", help="Force reinstall even if up to date")
-    upd.set_defaults(func=cmd_update)
 
-    sub.add_parser("version", help="Show version").set_defaults(func=cmd_version)
+    def _update_shim(args):
+        _do_update(args.check, args.force)
 
-    return p
+    upd.set_defaults(func=_update_shim)
+    sub.add_parser("version", help="Show version").set_defaults(func=lambda args: click.echo(__version__))
+
+    return _Shim(cli, p)
 
 
 def main() -> None:
-    # --version / --help early (before TUI)
-    if len(sys.argv) == 2 and sys.argv[1] in ("--help", "-h"):
-        parser = build_parser()
-        parser.print_help()
-        sys.exit(0)
-    if len(sys.argv) == 2 and sys.argv[1] in ("--version", "-v"):
-        print(__version__)
-        sys.exit(0)
-    # Support `keep-focused --version` via global flag as well
-    if "--version" in sys.argv or "-v" in sys.argv:
-        # Let argparse handle it (will set args.version)
-        pass
-
     # No arguments → launch interactive TUI (like opencode / claude code)
     if len(sys.argv) == 1:
         from .tui import run_tui
@@ -475,16 +604,10 @@ def main() -> None:
         run_tui()
         return
 
-    parser = build_parser()
-    args = parser.parse_args()
-    # Handle global --version flag
-    if getattr(args, "version", False):
-        print(__version__)
-        sys.exit(0)
-    if not hasattr(args, "func"):
-        # Unknown args → launch TUI as well (handles `keep-focused` with stray args)
-        from .tui import run_tui
-
-        run_tui()
-        return
-    args.func(args)
+    # Delegate to Click group; it will handle all subcommands and exit codes.
+    # Use prog_name="keep-focused" so help shows correct name.
+    try:
+        cli(prog_name="keep-focused")
+    except SystemExit as e:
+        # Re-raise to preserve exit code for callers / tests
+        raise

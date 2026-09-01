@@ -135,12 +135,20 @@ def test_tui_arrow_main_menu(tmp_env_arrow):
 
 def test_tui_arrow_checkbox(tmp_env_arrow):
     from keep_focused.tui import _arrow_select_sites
+    from keep_focused import SUGGESTED_SITES
 
-    with patch("keep_focused.tui.read_key", side_effect=["a", "enter"]):
+    # no a/n/c shortcuts: use Space to toggle single, Enter to finish
+    with patch("keep_focused.tui.read_key", side_effect=["space", "enter"]):
         result = _arrow_select_sites(set(), "Test")
-        from keep_focused import SUGGESTED_SITES
+        assert "facebook.com" in result
 
-        assert len(result) == len(SUGGESTED_SITES)
+    # navigate to last field [Add custom] and add a custom domain
+    n = len(SUGGESTED_SITES)
+    downs = ["down"] * n
+    with patch("keep_focused.tui.read_key", side_effect=downs + ["enter", "up", "enter"]):
+        with patch("builtins.input", return_value="mycustom12345.com"):
+            result = _arrow_select_sites(set(), "Test")
+            assert "mycustom12345.com" in result
 
     with patch("keep_focused.tui.read_key", side_effect=["q"]):
         result = _arrow_select_sites(set(["facebook.com"]), "Test")

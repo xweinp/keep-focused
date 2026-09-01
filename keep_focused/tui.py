@@ -116,57 +116,42 @@ def _select_sites_interactive_legacy(current: set[str] | None = None, title: str
     selected: set[str] = set(current) if current is not None else set(DEFAULT_SELECTED)
     while True:
         _header(title)
-        print(f"{DIM}Toggle by number,  a=all  n=none  d=done  q=cancel  c=custom domain (any website, e.g. myfavouritegame.com){RESET}\n")
+        print(f"{DIM}Enter number to toggle, type custom domain to add, d=done q=cancel{RESET}\n")
         for i, site in enumerate(SUGGESTED_SITES, 1):
             checked = "☑" if site in selected else "☐"
             color = GREEN if site in selected else DIM
             default_mark = f" {DIM}[suggested]{RESET}" if site in DEFAULT_SELECTED else ""
             print(f"  {color}{i:2}. {checked} {site}{default_mark}{RESET}")
+        # show custom domains already added as numbered items after suggested
+        customs = sorted(s for s in selected if s not in SUGGESTED_SITES)
+        offset = len(SUGGESTED_SITES)
+        for j, site in enumerate(customs, 1):
+            checked = "☑"  # customs in selected are always checked
+            print(f"  {GREEN}{offset+j:2}. {checked} {site} {DIM}[custom]{RESET}")
+        # last field: editable custom input
+        print(f"  {DIM}{offset+len(customs)+1:2}. ☐ [ Type custom domain and press Enter to add ]{RESET}")
         if selected:
             print(f"\n{DIM}Selected: {', '.join(sorted(selected))}{RESET}")
         else:
             print(f"\n{DIM}Selected: (none){RESET}")
-        print(f"\n{DIM}Custom domains in selection: {', '.join(s for s in selected if s not in SUGGESTED_SITES) or '(none)'}{RESET}")
 
         try:
-            raw = input(f"\n{BOLD}↳{RESET} Enter number to toggle, or a/n/d/q/c: ").strip().lower()
+            raw = input(f"\n{BOLD}↳{RESET} Enter number / domain / d/q: ").strip()
         except (EOFError, KeyboardInterrupt):
             return None
-
-        if raw in ("d", "done", ""):
+        low = raw.lower()
+        if low in ("d", "done", ""):
             break
-        if raw in ("q", "quit", "cancel"):
+        if low in ("q", "quit", "cancel"):
             return None
-        if raw == "a":
-            selected = set(SUGGESTED_SITES)
-            continue
-        if raw == "n":
-            selected = set()
-            continue
-        if raw in ("c", "custom"):
-            try:
-                custom = input("  Enter custom domain (e.g. youtube.com) or comma-separated: ").strip()
-            except (EOFError, KeyboardInterrupt):
-                continue
-            if not custom:
-                continue
-            for part in custom.replace(" ", "").split(","):
-                if not part:
-                    continue
-                d = normalize_domain(part)
-                if not d or "." not in d:
-                    print(f"  {RED}✗ Invalid domain: {part}{RESET}")
-                    time.sleep(0.7)
-                    continue
-                selected.add(d)
-            continue
-        parts = raw.replace(" ", "").split(",")
+        # split by comma to allow multiple entries like in arrow mode
+        parts = [p.strip() for p in raw.replace(" ", "").split(",") if p.strip()]
         any_handled = False
         for part in parts:
-            if not part:
-                continue
+            # try numeric toggle first (including customs)
             try:
                 idx = int(part)
+                # 1..len(SUGGESTED) -> toggle suggested
                 if 1 <= idx <= len(SUGGESTED_SITES):
                     site = SUGGESTED_SITES[idx - 1]
                     if site in selected:
@@ -174,20 +159,51 @@ def _select_sites_interactive_legacy(current: set[str] | None = None, title: str
                     else:
                         selected.add(site)
                     any_handled = True
-                else:
-                    print(f"  {RED}✗ Out of range: {part}{RESET}")
-                    time.sleep(0.7)
-            except ValueError:
-                d = normalize_domain(part)
-                if d and "." in d:
-                    if d in selected:
-                        selected.remove(d)
+                    continue
+                # offset+1 .. offset+len(customs) -> toggle custom (remove if toggled off)
+                if offset + 1 <= idx <= offset + len(customs):
+                    site = customs[idx - offset - 1]
+                    # toggle off removes from selected
+                    if site in selected:
+                        selected.remove(site)
                     else:
-                        selected.add(d)
+                        selected.add(site)
                     any_handled = True
+                    continue
+                # last field number (add) -> prompt for domain if no domain typed
+                if idx == offset + len(customs) + 1:
+                    # treat as custom add prompt: ask for domain
+                    try:
+                        custom = input("  Enter custom domain: ").strip()
+                    except (EOFError, KeyboardInterrupt):
+                        continue
+                    if not custom:
+                        continue
+                    d = normalize_domain(custom)
+                    if not d or "." not in d:
+                        print(f"  {RED}✗ Invalid domain: {custom}{RESET}")
+                        time.sleep(0.7)
+                        continue
+                    selected.add(d)
+                    any_handled = True
+                    continue
+                print(f"  {RED}✗ Out of range: {part}{RESET}")
+                time.sleep(0.7)
+                continue
+            except ValueError:
+                pass
+            # not numeric -> treat as domain to add
+            d = normalize_domain(part)
+            if d and "." in d:
+                # toggle: if already selected remove, else add (so typing existing removes)
+                if d in selected:
+                    selected.remove(d)
                 else:
-                    print(f"  {RED}✗ Invalid: {part}{RESET}")
-                    time.sleep(0.7)
+                    selected.add(d)
+                any_handled = True
+            else:
+                print(f"  {RED}✗ Invalid: {part}{RESET}")
+                time.sleep(0.7)
         if any_handled:
             continue
 
@@ -200,91 +216,157 @@ def _select_sites_interactive_legacy(current: set[str] | None = None, title: str
 def _arrow_select_sites(current: set[str] | None, title: str) -> list[str] | None:
     selected: set[str] = set(current) if current is not None else set(DEFAULT_SELECTED)
     idx = 0
-    # Hide cursor for arrow UI
     sys.stdout.write(HIDE_CURSOR)
     sys.stdout.flush()
     try:
         while True:
+            customs = sorted(s for s in selected if s not in SUGGESTED_SITES)
+            # items: suggested + customs + [add custom field]
+            def _all_items():
+                lst = list(SUGGESTED_SITES)
+                lst.extend(customs)
+                lst.append("__ADD_CUSTOM__")
+                return lst
+
+            all_items = _all_items()
+            n_items = len(all_items)
+            # clamp idx
+            idx = idx % n_items
+
             _header(title)
-            print(f"{DIM}↑/↓ move • Space toggle • Enter done • a=all n=none c=custom (any website) • q/Esc cancel{RESET}\n")
-            for i, site in enumerate(SUGGESTED_SITES):
+            print(f"{DIM}↑/↓ move • Space toggle • Enter done • q/Esc cancel{RESET}\n")
+            for i, site in enumerate(all_items):
+                is_add = site == "__ADD_CUSTOM__"
+                if is_add:
+                    label = "[ Type custom domain and press Enter to add ]"
+                    if i == idx:
+                        print(f"{REVERSE}  {i+1:2}. ☐ {label}  {RESET}")
+                    else:
+                        print(f"  {DIM}{i+1:2}. ☐ {label}{RESET}")
+                    continue
+                # for customs, show [custom], for suggested show [suggested] if default
                 checked = "☑" if site in selected else "☐"
-                # Highlighted line: reverse + bold, others dim/green
+                if site in SUGGESTED_SITES:
+                    is_suggested = True
+                    default_mark = f" {DIM}[suggested]{RESET}" if site in DEFAULT_SELECTED else ""
+                else:
+                    is_suggested = False
+                    default_mark = f" {DIM}[custom]{RESET}"
                 if i == idx:
-                    # Reverse video for highlighted line
-                    default_mark = f" {DIM}[suggested]{RESET}{REVERSE}" if site in DEFAULT_SELECTED else ""
-                    # Need to reset after reverse
-                    print(f"{REVERSE}  {i+1:2}. {checked} {site}{default_mark}  {RESET}")
+                    # add REVERSE marker
+                    dm = f" {DIM}[suggested]{RESET}{REVERSE}" if is_suggested and site in DEFAULT_SELECTED else (f" {DIM}[custom]{RESET}{REVERSE}" if not is_suggested else "")
+                    # simpler: just REVERSE whole line
+                    print(f"{REVERSE}  {i+1:2}. {checked} {site}{dm}  {RESET}")
                 else:
                     color = GREEN if site in selected else DIM
-                    default_mark = f" {DIM}[suggested]{RESET}" if site in DEFAULT_SELECTED else ""
-                    print(f"  {color}{i+1:2}. {checked} {site}{default_mark}{RESET}")
+                    # for non-highlighted, show default_mark without REVERSE
+                    dm2 = f" {DIM}[suggested]{RESET}" if is_suggested and site in DEFAULT_SELECTED else (f" {DIM}[custom]{RESET}" if not is_suggested else "")
+                    print(f"  {color}{i+1:2}. {checked} {site}{dm2}{RESET}")
 
-            # Show selected summary
             if selected:
                 print(f"\n{DIM}Selected ({len(selected)}): {', '.join(sorted(selected)[:5])}{' …' if len(selected)>5 else ''}{RESET}")
             else:
                 print(f"\n{DIM}Selected: (none){RESET}")
-            custom_only = [s for s in selected if s not in SUGGESTED_SITES]
-            if custom_only:
-                print(f"{DIM}Custom: {', '.join(sorted(custom_only))}{RESET}")
-            print(f"\n{DIM}Highlighted: {SUGGESTED_SITES[idx]}  [{ '☑' if SUGGESTED_SITES[idx] in selected else '☐' }] — press Space to toggle{RESET}")
+            # highlighted info
+            cur = all_items[idx]
+            if cur == "__ADD_CUSTOM__":
+                print(f"\n{DIM}Highlighted: [Add custom] — press Enter to type{RESET}")
+            else:
+                print(f"\n{DIM}Highlighted: {cur}  [{ '☑' if cur in selected else '☐' }] — press Space to toggle{RESET}")
 
             key = read_key()
             if key == "up":
-                idx = (idx - 1) % len(SUGGESTED_SITES)
+                idx = (idx - 1) % n_items
             elif key == "down":
-                idx = (idx + 1) % len(SUGGESTED_SITES)
+                idx = (idx + 1) % n_items
             elif key == "space":
-                site = SUGGESTED_SITES[idx]
-                if site in selected:
-                    selected.remove(site)
+                if all_items[idx] == "__ADD_CUSTOM__":
+                    # treat space on add field as enter
+                    key = "enter"
                 else:
-                    selected.add(site)
-            elif key == "enter":
-                return sorted(selected)
+                    site = all_items[idx]
+                    if site in selected:
+                        selected.remove(site)
+                    else:
+                        selected.add(site)
+                    # after toggle, if it was a custom and now removed, customs list will shrink, idx may need clamp
+                    continue
+            if key == "enter":
+                if all_items[idx] == "__ADD_CUSTOM__":
+                    # prompt for custom domain
+                    sys.stdout.write(SHOW_CURSOR)
+                    sys.stdout.flush()
+                    _clear()
+                    print(BANNER)
+                    print(f"{BOLD}{title} — add custom domain{RESET}")
+                    print(f"{DIM}{'─'*50}{RESET}")
+                    try:
+                        custom = input("  Enter custom domain (e.g. myfavouritegame.com): ").strip()
+                    except (EOFError, KeyboardInterrupt):
+                        custom = ""
+                    sys.stdout.write(HIDE_CURSOR)
+                    sys.stdout.flush()
+                    if not custom:
+                        continue
+                    # allow comma-separated
+                    added = False
+                    for part in custom.replace(" ", "").split(","):
+                        if not part:
+                            continue
+                        d = normalize_domain(part)
+                        if not d or "." not in d:
+                            print(f"  {RED}✗ Invalid domain: {part}{RESET}")
+                            time.sleep(0.7)
+                            continue
+                        selected.add(d)
+                        added = True
+                    if added:
+                        # new customs will appear above the add field; keep idx on add field for next entry
+                        # recompute n_items next loop, idx stays at add field position (now last)
+                        idx = len(SUGGESTED_SITES) + len([s for s in selected if s not in SUGGESTED_SITES])
+                    continue
+                else:
+                    # normal enter on non-add field means done (as before, Enter done)
+                    # To avoid accidental done when trying to toggle, require that user explicitly wants done via Enter on non-add?
+                    # Keep original behavior: Enter anywhere means done (return)
+                    return sorted(selected)
             elif key in ("q", "esc"):
                 return None
-            elif key == "a":
-                selected = set(SUGGESTED_SITES)
-            elif key == "n":
-                selected = set()
-            elif key == "c":
-                # Need to restore terminal for input()
-                sys.stdout.write(SHOW_CURSOR)
-                sys.stdout.flush()
-                _clear()
-                print(BANNER)
-                print(f"{BOLD}{title} — custom domain{RESET}")
-                print(f"{DIM}{'─'*50}{RESET}")
-                try:
-                    custom = input("  Enter custom domain (e.g. youtube.com, or comma-separated): ").strip()
-                except (EOFError, KeyboardInterrupt):
-                    custom = ""
-                sys.stdout.write(HIDE_CURSOR)
-                sys.stdout.flush()
-                if not custom:
-                    continue
-                for part in custom.replace(" ", "").split(","):
-                    if not part:
-                        continue
-                    d = normalize_domain(part)
-                    if not d or "." not in d:
-                        print(f"  {RED}✗ Invalid domain: {part}{RESET}")
-                        time.sleep(0.7)
-                        continue
-                    selected.add(d)
             elif key.isdigit():
-                # Allow quick toggle via number keys 1-9 (first 9 sites)
                 try:
                     n = int(key)
-                    # For 1-9, map to 1-9; for multi-digit not needed in raw mode (single char)
-                    if 1 <= n <= len(SUGGESTED_SITES):
-                        site = SUGGESTED_SITES[n - 1]
-                        if site in selected:
-                            selected.remove(site)
+                    if 1 <= n <= n_items:
+                        target = all_items[n - 1]
+                        if target == "__ADD_CUSTOM__":
+                            # trigger add
+                            sys.stdout.write(SHOW_CURSOR)
+                            sys.stdout.flush()
+                            _clear()
+                            print(BANNER)
+                            print(f"{BOLD}{title} — add custom domain{RESET}")
+                            print(f"{DIM}{'─'*50}{RESET}")
+                            try:
+                                custom = input("  Enter custom domain: ").strip()
+                            except (EOFError, KeyboardInterrupt):
+                                custom = ""
+                            sys.stdout.write(HIDE_CURSOR)
+                            sys.stdout.flush()
+                            if not custom:
+                                continue
+                            for part in custom.replace(" ", "").split(","):
+                                if not part:
+                                    continue
+                                d = normalize_domain(part)
+                                if not d or "." not in d:
+                                    print(f"  {RED}✗ Invalid domain: {part}{RESET}")
+                                    time.sleep(0.7)
+                                    continue
+                                selected.add(d)
                         else:
-                            selected.add(site)
+                            if target in selected:
+                                selected.remove(target)
+                            else:
+                                selected.add(target)
                 except ValueError:
                     pass
     finally:
