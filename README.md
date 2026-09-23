@@ -5,9 +5,8 @@ Block distracting websites **system-wide** on Debian — in every browser — be
 ![keep-focused](docs/screenshot.png)
 
 - **Every browser** — blocks via `/etc/hosts`, plus a `dnsmasq` wildcard so any subdomain is blocked too
-- **Password-protected** — unblocking, pausing or uninstalling needs a ≥20-character password (PBKDF2-SHA256)
+- **Password-protected** — unblocking, pausing or uninstalling needs a ≥20-character password
 - **Survives reboots** — a `systemd` service re-applies blocks on every boot
-- **No sudo or pip to install** — `sudo` is only asked for when `/etc/hosts` is edited
 
 ## Install
 
@@ -23,9 +22,9 @@ Installs to `~/.local/share/keep-focused` with a launcher at `~/.local/bin/keep-
 keep-focused
 ```
 
-The first run walks you through picking sites and setting a password. After that: `↑↓` move, `←→` switch panel, `Enter` choose, `Esc` back/quit. Adding sites never needs the password.
+The first run walks you through picking sites and setting a password.
 
-Without [Textual](https://textual.textualize.io) installed, a simpler line-based menu is used.
+The full-screen app above needs the [Textual](https://textual.textualize.io) Python library, which the installer does not add. Install it with `pip install --user textual`; without it, `keep-focused` opens a simpler text menu instead: a plain list of actions you move through with the arrow keys.
 
 ### Commands
 
