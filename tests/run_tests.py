@@ -4,7 +4,6 @@
 import os
 import sys
 import tempfile
-import pathlib
 import traceback
 import importlib.util
 from pathlib import Path
@@ -50,7 +49,7 @@ except ModuleNotFoundError:
 
 # Mock pytest fixtures minimally
 class TmpEnv:
-    def __init__(self, tmp_path, monkeypatch_dict=None, arrow=False):
+    def __init__(self, tmp_path):
         self.tmp_path = tmp_path
         self.hosts = tmp_path / "hosts"
         self.config = tmp_path / "config.json"
@@ -64,12 +63,6 @@ class TmpEnv:
             "XDG_CONFIG_HOME": str(tmp_path / ".config"),
             "HOME": str(tmp_path),
         }
-        if arrow:
-            self.env["KEEP_FOCUSED_ARROW"] = "1"
-            self.env.pop("KEEP_FOCUSED_NO_ARROW", None)
-        else:
-            self.env["KEEP_FOCUSED_NO_ARROW"] = "1"
-            self.env.pop("KEEP_FOCUSED_ARROW", None)
 
     def __getitem__(self, key):
         return getattr(self, key)
@@ -80,37 +73,19 @@ class TmpEnv:
     def apply(self):
         for k, v in self.env.items():
             os.environ[k] = v
-        # Ensure opposite arrow var is cleared
-        if "KEEP_FOCUSED_ARROW" in self.env:
-            os.environ.pop("KEEP_FOCUSED_NO_ARROW", None)
-        else:
-            os.environ.pop("KEEP_FOCUSED_ARROW", None)
 
     def cleanup(self):
-        for k in list(self.env.keys()) + ["KEEP_FOCUSED_ARROW", "KEEP_FOCUSED_NO_ARROW", "XDG_CONFIG_HOME", "HOME"]:
+        for k in list(self.env.keys()):
             os.environ.pop(k, None)
 
 
 def run_one(test_func, tmp_path):
-    # Setup tmp_env like pytest fixture – handle both tmp_env and tmp_env_arrow
+    # Setup tmp_env like the pytest fixture
     import inspect
 
     sig = inspect.signature(test_func)
-    # Determine if test needs arrow env
-    needs_arrow = "tmp_env_arrow" in sig.parameters
-    env = TmpEnv(tmp_path, arrow=needs_arrow)
-    # For arrow tests, also need to mock isatty to True (like conftest does)
-    isatty_patches = []
-    if needs_arrow:
-        # Mock sys.stdin/stdout.isatty to True for arrow navigation
-        isatty_patches.append(patch.object(sys.stdin, "isatty", return_value=True))
-        isatty_patches.append(patch.object(sys.stdout, "isatty", return_value=True))
-        for p in isatty_patches:
-            p.start()
+    env = TmpEnv(tmp_path)
     old_env = {k: os.environ.get(k) for k in env.env}
-    # Also save ARROW/NO_ARROW plus XDG/HOME
-    old_arrow = os.environ.get("KEEP_FOCUSED_ARROW")
-    old_no_arrow = os.environ.get("KEEP_FOCUSED_NO_ARROW")
     old_xdg = os.environ.get("XDG_CONFIG_HOME")
     old_home = os.environ.get("HOME")
     env.apply()
@@ -119,8 +94,6 @@ def run_one(test_func, tmp_path):
         kwargs = {}
         if "tmp_env" in sig.parameters:
             kwargs["tmp_env"] = env
-        if "tmp_env_arrow" in sig.parameters:
-            kwargs["tmp_env_arrow"] = env
         if "tmp_path" in sig.parameters:
             kwargs["tmp_path"] = tmp_path
         if "monkeypatch" in sig.parameters:
@@ -192,26 +165,12 @@ def run_one(test_func, tmp_path):
         tb = traceback.format_exc()
         return False, tb
     finally:
-        # Stop isatty patches
-        for p in isatty_patches:
-            try:
-                p.stop()
-            except Exception:
-                pass
         # Restore env
         for k in env.env:
             if old_env[k] is None:
                 os.environ.pop(k, None)
             else:
                 os.environ[k] = old_env[k]
-        if old_arrow is None:
-            os.environ.pop("KEEP_FOCUSED_ARROW", None)
-        else:
-            os.environ["KEEP_FOCUSED_ARROW"] = old_arrow
-        if old_no_arrow is None:
-            os.environ.pop("KEEP_FOCUSED_NO_ARROW", None)
-        else:
-            os.environ["KEEP_FOCUSED_NO_ARROW"] = old_no_arrow
         if old_xdg is None:
             os.environ.pop("XDG_CONFIG_HOME", None)
         else:

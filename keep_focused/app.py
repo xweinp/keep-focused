@@ -7,7 +7,7 @@ import os
 import shutil
 import subprocess
 import sys
-from typing import Callable
+from typing import Callable, TypeVar
 
 from rich.text import Text
 from textual import on, work
@@ -61,7 +61,56 @@ def _remove_configs() -> None:
 # ---------------------------------------------------------------------------
 
 
-class ConfirmScreen(ModalScreen[bool]):
+R = TypeVar("R")
+
+
+class Dialog(ModalScreen[R]):
+    """Modal with arrow navigation: ↑↓ between fields and the button row, ←→ between buttons.
+
+    ↓ from the last field lands on the primary button (id "ok" or "yes").
+    """
+
+    BINDINGS = [
+        Binding("down", "nav_down", show=False),
+        Binding("up", "nav_up", show=False),
+        Binding("left", "nav_side(-1)", show=False),
+        Binding("right", "nav_side(1)", show=False),
+    ]
+
+    def _fields(self) -> list[Input]:
+        return [w for w in self.query(Input) if w.display]
+
+    def _buttons(self) -> list[Button]:
+        return list(self.query(Button))
+
+    def action_nav_down(self) -> None:
+        fields = self._fields()
+        if self.focused in fields:
+            i = fields.index(self.focused)
+            if i + 1 < len(fields):
+                fields[i + 1].focus()
+                return
+            buttons = self._buttons()
+            primary = [b for b in buttons if b.id in ("ok", "yes")]
+            (primary or buttons)[-1].focus()
+
+    def action_nav_up(self) -> None:
+        fields = self._fields()
+        if self.focused in fields:
+            i = fields.index(self.focused)
+            if i > 0:
+                fields[i - 1].focus()
+        elif isinstance(self.focused, Button) and fields:
+            fields[-1].focus()
+
+    def action_nav_side(self, step: int) -> None:
+        buttons = self._buttons()
+        if self.focused in buttons:
+            i = buttons.index(self.focused) + step
+            buttons[max(0, min(i, len(buttons) - 1))].focus()
+
+
+class ConfirmScreen(Dialog[bool]):
     BINDINGS = [Binding("escape", "dismiss(False)", "Cancel")]
 
     def __init__(self, title: str, message: str, confirm: str = "Confirm", danger: bool = False) -> None:
@@ -84,7 +133,7 @@ class ConfirmScreen(ModalScreen[bool]):
         self.dismiss(event.button.id == "yes")
 
 
-class PasswordScreen(ModalScreen[bool]):
+class PasswordScreen(Dialog[bool]):
     """Ask for the unlock password; dismisses True only once it verifies."""
 
     BINDINGS = [Binding("escape", "dismiss(False)", "Cancel")]
@@ -119,7 +168,7 @@ class PasswordScreen(ModalScreen[bool]):
         self.dismiss(False)
 
 
-class NewPasswordScreen(ModalScreen["str | None"]):
+class NewPasswordScreen(Dialog["str | None"]):
     BINDINGS = [Binding("escape", "dismiss(None)", "Cancel")]
 
     def __init__(self, title: str = "Set a password") -> None:

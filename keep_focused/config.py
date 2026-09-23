@@ -100,11 +100,6 @@ def save_config(cfg: dict) -> None:
             pass
 
 
-def is_setup() -> bool:
-    cfg = load_config()
-    return cfg is not None and "password_hash" in cfg
-
-
 def default_config(password_hash: str, salt: str, blocked_sites: list[str]) -> dict:
     return {
         "password_hash": password_hash,
@@ -113,8 +108,3 @@ def default_config(password_hash: str, salt: str, blocked_sites: list[str]) -> d
         "enabled": True,
         "version": 1,
     }
-
-
-def config_location() -> Path:
-    """Public helper for UI to show where config lives."""
-    return _config_path()

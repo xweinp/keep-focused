@@ -167,13 +167,10 @@ def test_block_custom_arbitrary_sites(tmp_env, monkeypatch):
     hosts_content = tmp_env["hosts"].read_text()
     assert custom1 in hosts_content
     assert custom2 in hosts_content
-    # dnsmasq wildcard and is_blocked_host should cover any depth
-    from keep_focused.hosts import is_blocked_host
+    # dnsmasq wildcard covers every subdomain of each blocked site
     from keep_focused.dnsmasq import get_dnsmasq_blocked
 
     assert custom1 in get_dnsmasq_blocked()
-    assert is_blocked_host(f"a.b.c.{custom1}", [custom1])
-    assert is_blocked_host(f"andy.whatever.someone.invents.{custom2}", [custom2])
     # block another custom with subdomain
     _run_cli(tmp_env, ["block", custom3], mock_pw=pw)
     data = json.loads(tmp_env["config"].read_text())

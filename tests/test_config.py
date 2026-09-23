@@ -4,7 +4,7 @@ from pathlib import Path
 
 import keep_focused.config as cfg_mod
 from keep_focused.auth import hash_password
-from keep_focused.config import config_location, default_config, load_config, save_config
+from keep_focused.config import default_config, load_config, save_config
 
 
 def test_save_and_load(tmp_env):
@@ -16,7 +16,7 @@ def test_save_and_load(tmp_env):
     assert loaded["blocked_sites"] == ["facebook.com", "x.com"]
     assert loaded["password_hash"] == h
     assert loaded["enabled"] is True
-    assert config_location().exists()
+    assert tmp_env["config"].exists()
 
 
 def test_config_user_vs_system(tmp_path, monkeypatch):

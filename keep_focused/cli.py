@@ -520,19 +520,6 @@ def version():
     _do_version()
 
 
-# ---------------------------------------------------------------------------
-# Backwards compatibility: build_parser
-# ---------------------------------------------------------------------------
-
-def build_parser():
-    """Deprecated: use `cli` (Click group) directly.
-
-    Kept only to not break external imports; returns the Click group.
-    No argparse is constructed anymore — the old shim is removed.
-    """
-    return cli
-
-
 def main() -> None:
     if len(sys.argv) == 1:
         from .app import can_run_app, run_app

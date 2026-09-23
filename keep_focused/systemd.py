@@ -138,15 +138,6 @@ def _user_systemd_available() -> bool:
     return shutil.which("systemctl") is not None
 
 
-def is_systemd_available() -> bool:
-    # System service requires /run/systemd/system, user service just needs systemctl
-    if shutil.which("systemctl") is None:
-        return False
-    # If we're checking for user service, it's enough that systemctl exists
-    # For system service, check /run/systemd/system
-    return True
-
-
 def _try_system_service_install(content: str, executable: str) -> bool:
     """Try to install system service via sudo if not root. Return True only if start succeeds."""
     path = SYSTEMD_PATH
@@ -343,15 +334,3 @@ def is_service_enabled() -> bool:
             if result.returncode == 0:
                 return True
     return False
-
-
-def service_location() -> Path | None:
-    """Return path of installed service if any."""
-    if os.environ.get("KEEP_FOCUSED_SERVICE"):
-        p = Path(os.environ["KEEP_FOCUSED_SERVICE"])
-        return p if p.exists() else None
-    for prefer_user in [False, True]:
-        p = _service_path(prefer_user=prefer_user)
-        if p.exists():
-            return p
-    return None

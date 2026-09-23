@@ -46,24 +46,6 @@ def expand_domains(domains: list[str]) -> list[str]:
     return sorted(out)
 
 
-def is_blocked_host(host: str, blocked_domains: list[str]) -> bool:
-    """Suffix check with dot boundary (not infix/prefix).
-
-    Returns True if host == blocked or host ends with "."+blocked.
-    So "spotify.com" blocks "spotify.com" and "open.spotify.com",
-    but NOT "notspotify.com" (infix would wrongly block it).
-    Also "x.com" blocks "sub.x.com" but not "notx.com".
-    """
-    h = normalize_domain(host)
-    for raw in blocked_domains:
-        d = normalize_domain(raw)
-        if not d:
-            continue
-        if h == d or h.endswith(f".{d}"):
-            return True
-    return False
-
-
 def _build_block_section(domains: list[str]) -> str:
     if not domains:
         return ""
