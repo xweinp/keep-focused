@@ -44,14 +44,6 @@ keep-focused uninstall
 - If `dnsmasq` is present, `/etc/dnsmasq.d/keep-focused.conf` blocks every subdomain (`a.b.site.com`) but not look-alikes (`notsite.com`).
 - Config lives in `~/.config/keep-focused/config.json` (mode 0600).
 
-## Development
-
-```bash
-./run-tests.sh
-```
-
-Override paths for safe manual testing with `KEEP_FOCUSED_HOSTS`, `KEEP_FOCUSED_CONFIG`, `KEEP_FOCUSED_SERVICE` and `KEEP_FOCUSED_DNSMASQ`.
-
 ## License
 
 MIT
