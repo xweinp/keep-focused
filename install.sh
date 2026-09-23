@@ -41,10 +41,10 @@ if [ "$PY_MAJOR" -lt 3 ] || { [ "$PY_MAJOR" -eq 3 ] && [ "$PY_MINOR" -lt 9 ]; };
 fi
 dim "✓ python3 $PY_VER found"
 
-# 1.5 Ensure Python deps for rich help (optional – CLI falls back to plain if missing)
+# 1.5 Ensure Python deps: textual (required, the app) + click/rich/rich-click (pretty help)
 # We need click, rich, rich-click for the new pretty help (grouped panels, colors).
 # Install is best-effort, no sudo pip, --user only. If it fails, CLI still works plain.
-for _pkg in "click:rich_click" "rich:rich" "rich-click:rich_click"; do
+for _pkg in "click:rich_click" "rich:rich" "rich-click:rich_click" "textual:textual"; do
   _pip_pkg="${_pkg%%:*}"
   _import_name="${_pkg##*:}"
   if python3 -c "import $_import_name" 2>/dev/null; then
@@ -73,6 +73,10 @@ for _pkg in "click:rich_click" "rich:rich" "rich-click:rich_click"; do
     fi
     if python3 -c "import $_import_name" 2>/dev/null; then
       green "✓ $_import_name installed"
+    elif [ "$_import_name" = "textual" ]; then
+      red "✗ Could not install textual – the keep-focused app needs it."
+      red "  Install it (e.g. pip install --user textual or sudo apt install python3-textual) and re-run."
+      exit 1
     else
       yellow "⚠ Could not install $_import_name – CLI will use plain help (still works)"
     fi

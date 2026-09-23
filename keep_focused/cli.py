@@ -535,15 +535,11 @@ def build_parser():
 
 def main() -> None:
     if len(sys.argv) == 1:
-        try:
-            from .app import can_run_app, run_app
-        except ImportError:  # Textual not installed
-            can_run_app = None
-        if can_run_app is not None and can_run_app():
-            run_app()
-            return
-        from .tui import run_tui
+        from .app import can_run_app, run_app
 
-        run_tui()
+        if not can_run_app():
+            print("keep-focused needs an interactive terminal. See `keep-focused --help` for commands.", file=sys.stderr)
+            sys.exit(1)
+        run_app()
         return
     cli(prog_name="keep-focused")

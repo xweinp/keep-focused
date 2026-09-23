@@ -24,8 +24,6 @@ keep-focused
 
 The first run walks you through picking sites and setting a password.
 
-The full-screen app above needs the [Textual](https://textual.textualize.io) Python library, which the installer does not add. Install it with `pip install --user textual`; without it, `keep-focused` opens a simpler text menu instead: a plain list of actions you move through with the arrow keys.
-
 ### Commands
 
 For scripting. Everything except `status`, `list` and `update` asks for the password.

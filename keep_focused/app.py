@@ -1,8 +1,4 @@
-"""Full-screen terminal app (Textual) – the default UI for `keep-focused`.
-
-Falls back to the line-based UI in tui.py when Textual is not installed or the
-terminal is not interactive (see `can_run_app`).
-"""
+"""Full-screen terminal app (Textual) – the UI for `keep-focused`."""
 
 from __future__ import annotations
 
@@ -26,13 +22,12 @@ from . import DEFAULT_SELECTED, SUGGESTED_SITES, __version__
 from .auth import MIN_PASSWORD_LENGTH, hash_password, verify_password
 from .config import _all_config_paths, default_config, load_config, save_config
 from .hosts import apply_block, clear_block, is_block_active, normalize_domain
-from .keys import is_interactive
 from .systemd import install_service, is_service_enabled, uninstall_service
 
 
 def can_run_app() -> bool:
     """True when the full-screen app can take over the terminal."""
-    return is_interactive() and sys.stdout.isatty() and sys.stdin.isatty()
+    return sys.stdout.isatty() and sys.stdin.isatty()
 
 
 def _sudo_needs_password() -> bool:
