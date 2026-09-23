@@ -40,7 +40,7 @@ export PATH="$HOME/.local/bin:$PATH" && keep-focused
 You get a full-screen app (built with [Textual](https://textual.textualize.io), mouse + keyboard):
 
 ```
- ◉ keep-focused  stay sharp                                                    v0.4.1
+ ◉ keep-focused  stay sharp                                                    v1.0.0
 
  ╭──────────────────────╮ ╭──────────────────────────╮ ╭────────────────────────────╮
  │ ● Blocking on        │ │ 4 sites blocked          │ │ ⟳ Autostart on             │
