@@ -95,3 +95,13 @@ def test_update_cli_via_mock(tmp_env, monkeypatch):
         cli.main()
     except SystemExit as e:
         assert e.code == 0
+
+
+def test_update_available_compares_versions():
+    import keep_focused.update as upd
+    from unittest.mock import patch
+
+    cases = {"999.0.0": True, upd.__version__: False, "0.0.1": False, None: None}
+    for remote, expected in cases.items():
+        with patch.object(upd, "_fetch_remote_version", lambda remote=remote: remote):
+            assert upd.update_available() is expected, remote

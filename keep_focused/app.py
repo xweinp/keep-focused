@@ -23,6 +23,7 @@ from .auth import MIN_PASSWORD_LENGTH, hash_password, verify_password
 from .config import _all_config_paths, default_config, load_config, save_config
 from .hosts import apply_block, clear_block, is_block_active, normalize_domain
 from .systemd import install_service, is_service_enabled, uninstall_service
+from .update import update_available
 
 
 def can_run_app() -> bool:
@@ -397,7 +398,7 @@ class MainScreen(Screen):
         ("toggle", "‖", "Pause / resume blocking"),
         ("reapply", "↺", "Re-apply blocks"),
         ("password", "*", "Change password"),
-        ("update", "↓", "Check for updates"),
+        ("update", "↓", "Update"),
         ("uninstall", "×", "Uninstall"),
         ("quit", "←", "Quit"),
     ]
@@ -405,6 +406,7 @@ class MainScreen(Screen):
     def compose(self) -> ComposeResult:
         with Horizontal(id="topbar"):
             yield Static("◉ [b]keep-focused[/b]  [dim]stay sharp[/]", id="brand")
+            yield Static("", id="update-status")
             yield Static(f"v{__version__}", id="version")
         with Horizontal(id="cards"):
             yield Static(id="card-state", classes="card")
@@ -426,6 +428,11 @@ class MainScreen(Screen):
 
     def on_mount(self) -> None:
         self.query_one("#actions").focus()
+
+    def show_update_status(self, available: bool | None) -> None:
+        """Label left of the version: None (GitHub unreachable) shows nothing."""
+        label = {True: "[b $success]Update available[/]", False: "Up to date", None: ""}[available]
+        self.query_one("#update-status", Static).update(label)
 
     def action_focus_panel(self, which: str) -> None:
         self.query_one(f"#{which}").focus()
@@ -491,6 +498,7 @@ class KeepFocusedApp(App):
 
     #topbar { height: 1; padding: 0 2; background: $panel; }
     #brand { width: 1fr; color: $accent; }
+    #update-status { width: auto; color: $text-muted; margin-right: 2; }
     #version { width: auto; color: $text-muted; }
 
     #cards { height: 4; margin: 1 1 0 1; }
@@ -556,10 +564,16 @@ class KeepFocusedApp(App):
     async def on_mount(self) -> None:
         self.main = MainScreen()
         await self.push_screen(self.main)
+        self.check_for_update()
         if self.cfg is None or "password_hash" not in self.cfg:
             self.run_setup()
         else:
             self.refresh_status()
+
+    @work(thread=True, exclusive=True, group="update-check")
+    def check_for_update(self) -> None:
+        available = update_available()
+        self.call_from_thread(self.main.show_update_status, available)
 
     def refresh_status(self) -> None:
         self.cfg = load_config()

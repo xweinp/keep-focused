@@ -2,6 +2,7 @@
 
 import asyncio
 import sys
+from contextlib import contextmanager
 from unittest.mock import patch
 
 import pytest
@@ -39,11 +40,49 @@ def _drive(screen, steps):
     asyncio.run(run())
 
 
+@contextmanager
+def _main_app_patches(update=False):
+    """Run the main app on fake config/state, with a fake update check result."""
+    with patch.object(app_mod, "load_config", lambda: dict(CFG)), \
+         patch.object(app_mod, "is_block_active", lambda: True), \
+         patch.object(app_mod, "is_service_enabled", lambda: True), \
+         patch.object(app_mod, "update_available", lambda: update):
+        yield
+
+
+def _update_label(update):
+    async def run():
+        with _main_app_patches(update):
+            app = KeepFocusedApp()
+            async with app.run_test() as pilot:
+                await app.workers.wait_for_complete()
+                await pilot.pause()
+                return str(app.main.query_one("#update-status").render())
+
+    return asyncio.run(run())
+
+
+def test_top_bar_shows_update_available():
+    assert _update_label(True) == "Update available"
+
+
+def test_top_bar_shows_up_to_date():
+    assert _update_label(False) == "Up to date"
+
+
+def test_top_bar_shows_nothing_when_offline():
+    assert _update_label(None) == ""
+
+
+def test_actions_menu_has_update_not_check_for_updates():
+    labels = [label for _, _, label in app_mod.MainScreen.ACTIONS]
+    assert "Update" in labels
+    assert "Check for updates" not in labels
+
+
 def test_actions_menu_enter_opens_change_password():
     async def run():
-        with patch.object(app_mod, "load_config", lambda: dict(CFG)), \
-             patch.object(app_mod, "is_block_active", lambda: True), \
-             patch.object(app_mod, "is_service_enabled", lambda: True):
+        with _main_app_patches():
             app = KeepFocusedApp()
             async with app.run_test() as pilot:
                 await pilot.pause()

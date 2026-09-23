@@ -91,6 +91,21 @@ def _fetch_remote_version() -> str | None:
     return None
 
 
+def _parse_version(v: str) -> tuple:
+    try:
+        return tuple(int(x) for x in v.strip().lstrip("v").split("."))
+    except Exception:
+        return (0,)
+
+
+def update_available() -> bool | None:
+    """True if GitHub has a newer version than this one, None if it can't be reached."""
+    remote = _fetch_remote_version()
+    if remote is None:
+        return None
+    return _parse_version(remote) > _parse_version(__version__)
+
+
 def _update_via_git(repo_root: Path) -> bool:
     """Try git pull in repo_root. Returns True if success."""
     if not shutil.which("git"):
@@ -210,13 +225,7 @@ def perform_update(check_only: bool = False, force: bool = False) -> int:
             return 0
         elif remote_version != __version__:
             # compare versions to show correct direction (remote may be cached older)
-            def _parse(v: str):
-                try:
-                    return tuple(int(x) for x in v.strip().lstrip("v").split("."))
-                except Exception:
-                    return (0,)
-
-            cur_t, rem_t = _parse(__version__), _parse(remote_version)
+            cur_t, rem_t = _parse_version(__version__), _parse_version(remote_version)
             if rem_t > cur_t:
                 print(_yellow(f"  → Update available: {__version__} → {remote_version}"))
             elif cur_t > rem_t:
