@@ -147,6 +147,11 @@ def apply_dnsmasq_block(domains: list[str], enabled: bool = True) -> bool:
         return False
 
     content = _build_dnsmasq_conf(domains if enabled else [])
+    try:
+        if path.read_text() == content:
+            return True
+    except OSError:
+        pass
     if not _write_with_sudo(content, path):
         return False
     _restart_dnsmasq()

@@ -229,14 +229,17 @@ def _strip_existing_block(content: str) -> str:
 
 def apply_block(domains: list[str], enabled: bool = True) -> None:
     """Apply blocking state to hosts file and dnsmasq wildcard (any subdomain)."""
-    content = read_hosts()
-    content = _strip_existing_block(content)
+    current = read_hosts()
+    content = _strip_existing_block(current)
     if enabled and domains:
         block = _build_block_section(domains)
         if content and not content.endswith("\n"):
             content += "\n"
         content += block
-    write_hosts(content)
+    # Skip the write when nothing changed: the boot-time user service has no
+    # root and no TTY, so a redundant write would fail on the locked hosts file.
+    if content != current:
+        write_hosts(content)
     # also update dnsmasq for wildcard (any depth: a.b.c.<blocked> -> 127.0.0.1)
     try:
         from .dnsmasq import apply_dnsmasq_block
