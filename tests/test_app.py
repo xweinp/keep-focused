@@ -173,3 +173,42 @@ def test_only_selected_dialog_button_is_highlighted():
             assert ok.styles.background != highlight
 
     asyncio.run(run())
+
+
+def _run_update_action(new_version):
+    """Choose Update with a fake updater that leaves `new_version` on disk; return the app's exit value."""
+    import contextlib
+    import keep_focused.update as upd
+
+    async def run():
+        with _main_app_patches(), \
+             patch.object(upd, "perform_update", return_value=0), \
+             patch.object(upd, "installed_version", return_value=new_version), \
+             patch("builtins.input", return_value=""):
+            app = KeepFocusedApp()
+            async with app.run_test() as pilot:
+                await pilot.pause()
+                with patch.object(app, "suspend", contextlib.nullcontext):
+                    app.action_update()
+                await pilot.pause()
+                running = app.is_running
+            return running, app.return_value
+
+    return asyncio.run(run())
+
+
+def test_update_restarts_app_when_new_version_installed():
+    running, result = _run_update_action("999.0.0")
+    assert result == app_mod.RESTART
+
+
+def test_update_keeps_app_open_when_nothing_changed():
+    running, result = _run_update_action(app_mod.__version__)
+    assert running and result is None
+
+
+def test_run_app_relaunches_after_update():
+    with patch.object(KeepFocusedApp, "run", return_value=app_mod.RESTART), \
+         patch.object(app_mod.os, "execv") as execv:
+        app_mod.run_app()
+    execv.assert_called_once_with(sys.executable, [sys.executable, "-m", "keep_focused"])

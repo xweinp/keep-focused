@@ -98,6 +98,18 @@ def _parse_version(v: str) -> tuple:
         return (0,)
 
 
+def installed_version() -> str | None:
+    """Version of the copy on disk, which differs from __version__ once an update has run."""
+    init = Path(__file__).resolve().parent / "__init__.py"
+    try:
+        for line in init.read_text().splitlines():
+            if line.startswith("__version__"):
+                return line.split("=", 1)[1].strip().strip('"').strip("'")
+    except OSError:
+        pass
+    return None
+
+
 def update_available() -> bool | None:
     """True if GitHub has a newer version than this one, None if it can't be reached."""
     remote = _fetch_remote_version()

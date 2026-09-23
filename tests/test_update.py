@@ -105,3 +105,9 @@ def test_update_available_compares_versions():
     for remote, expected in cases.items():
         with patch.object(upd, "_fetch_remote_version", lambda remote=remote: remote):
             assert upd.update_available() is expected, remote
+
+
+def test_installed_version_reads_copy_on_disk():
+    import keep_focused.update as upd
+
+    assert upd.installed_version() == upd.__version__

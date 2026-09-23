@@ -728,7 +728,7 @@ class KeepFocusedApp(App):
         self.notify("Password changed")
 
     def action_update(self) -> None:
-        from .update import perform_update
+        from .update import installed_version, perform_update
 
         with self.suspend():
             print(f"\n  ◉ keep-focused — checking for updates (current v{__version__})\n")
@@ -737,7 +737,9 @@ class KeepFocusedApp(App):
                 input("\n  Press Enter to return… ")
             except (EOFError, KeyboardInterrupt):
                 pass
-        self.notify("Restart keep-focused to use a new version", title="Update")
+        if installed_version() not in (None, __version__):
+            # This process still runs the old code; start the new one.
+            self.exit(RESTART)
 
     @work(exclusive=True)
     async def action_uninstall(self) -> None:
@@ -763,6 +765,11 @@ class KeepFocusedApp(App):
             self.exit("keep-focused removed all blocks. Bye — stay focused!")
 
 
+RESTART = "__restart__"
+
+
 def run_app() -> None:
     result = KeepFocusedApp().run()
+    if result == RESTART:
+        os.execv(sys.executable, [sys.executable, "-m", "keep_focused"])
     print(result or "Bye — stay focused!")
