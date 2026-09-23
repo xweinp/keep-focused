@@ -446,7 +446,7 @@ class MainScreen(Screen):
             state.update("[b $error]○ Paused[/]\n[dim]choose Pause / resume[/]")
 
         self.query_one("#card-sites", Static).update(
-            f"[b]{len(sites)}[/b] site{'s' if len(sites) != 1 else ''} blocked\n[dim]plus their www. variants[/]"
+            f"[b]{len(sites)}[/b] site{'s' if len(sites) != 1 else ''} blocked"
         )
         boot = self.query_one("#card-boot", Static)
         boot.set_classes("card " + ("-on" if autostart else "-off"))
@@ -460,7 +460,7 @@ class MainScreen(Screen):
         site_list.clear_options()
         if sites:
             site_list.add_options(
-                Option(Text.assemble(("✕ " if enabled else "· ", "red" if enabled else "dim"), s, ("   + www", "dim")), id=s)
+                Option(Text.assemble(("✕ " if enabled else "· ", "red" if enabled else "dim"), s), id=s)
                 for s in sites
             )
             site_list.highlighted = 0
