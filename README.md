@@ -37,34 +37,32 @@ keep-focused
 export PATH="$HOME/.local/bin:$PATH" && keep-focused
 ```
 
-You get an interactive menu (arrow navigation):
+You get a full-screen app (built with [Textual](https://textual.textualize.io), mouse + keyboard):
 
 ```
-  ╔══════════════════════════════════════════╗
-  ║         keep-focused  — stay sharp      ║
-  ╚══════════════════════════════════════════╝
+ ◉ keep-focused  stay sharp                                                    v0.4.1
 
-  Main menu
-  ──────────────────────────────────────────────────
-   Sites:   4 blocked     (facebook.com, x.com...)
-   State:   🟢             (hosts active, autostart on)
-
-  › View blocked sites
-   Block more sites (suggested + custom)
-   Unblock sites
-   Toggle enable/disable
-   Change password
-   Update (check & install latest)
-   Uninstall
-   Quit
-
-  ↑/↓ to move • Enter to select • q/Esc to quit
+ ╭──────────────────────╮ ╭──────────────────────────╮ ╭────────────────────────────╮
+ │ ● Blocking on        │ │ 4 sites blocked          │ │ ⟳ Autostart on             │
+ │ in every browser     │ │ plus their www. variants │ │ re-applied on every login  │
+ ╰──────────────────────╯ ╰──────────────────────────╯ ╰────────────────────────────╯
+ ╭ Blocked sites ─────────────────────────────╮ ╭ Actions ─────────────────────────╮
+ │ ✕ facebook.com   + www                     │ │  +   Block more sites            │
+ │ ✕ linkedin.com   + www                     │ │  −   Unblock sites               │
+ │ ✕ spotify.com    + www                     │ │  ‖   Pause / resume blocking     │
+ │ ✕ x.com          + www                     │ │  ↺   Re-apply blocks             │
+ │                                            │ │  *   Change password             │
+ ╰───────────────────────────── Enter unblocks ╯ ╰──────────────────────────────────╯
+  ↑↓ move   ←→ switch panel   Enter choose   Esc quit
 ```
+
+Keys: only arrows, **Enter** and **Esc**. `↑↓` move, `←→` switch between the sites and actions panels, Enter chooses (on a blocked site it unblocks it), Esc goes back or quits. When sudo needs your password the app steps aside, shows the normal sudo prompt, then comes back.
+
+Without Textual, or when not run in a terminal, the older line-based menu is used instead.
 
 **First run** goes to **Setup**:
-1. Checkbox list of 13 suggested sites (defaults `facebook.com`, `x.com`, `linkedin.com`, `spotify.com` pre-checked) — **or press `c` to add any custom website** (e.g. `myfavouritegame.com`, `news.ycombinator.com`, comma-separated)
-   - **↑/↓ to move, Space to toggle, Enter done, a=all, n=none, c=custom (any website), q/Esc cancel** (falls back to `1/q` typing when not a TTY)
-2. Set a password **≥20 chars** (hidden, twice). You need it to unblock/disable.
+1. Checkbox list of 13 suggested sites (defaults `facebook.com`, `x.com`, `linkedin.com`, `spotify.com` pre-checked). Enter ticks or unticks a site; choose **＋ Add another website…** to type any other site (comma-separated works); choose **✓ Save** when done, Esc cancels.
+2. Set a password **≥20 chars** (typed twice, with a length meter). You need it to unblock or pause. Adding sites never needs it.
 3. The app then writes `~/.config/keep-focused/config.json` (0600) + patches `/etc/hosts` with `# BEGIN keep-focused` (uses `sudo` only here, prompts for your sudo password if needed) + writes `/etc/dnsmasq.d/keep-focused.conf` wildcard (`address=/<blocked>/127.0.0.1` for any `whatever.<blocked>`) + enables `systemd` service so blocks persist after reboot.
 
 All browsers now show connection errors for blocked sites.

@@ -535,6 +535,13 @@ def build_parser():
 
 def main() -> None:
     if len(sys.argv) == 1:
+        try:
+            from .app import can_run_app, run_app
+        except ImportError:  # Textual not installed
+            can_run_app = None
+        if can_run_app is not None and can_run_app():
+            run_app()
+            return
         from .tui import run_tui
 
         run_tui()

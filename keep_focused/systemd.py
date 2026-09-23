@@ -154,8 +154,8 @@ def _try_system_service_install(content: str, executable: str) -> bool:
         if os.geteuid() == 0:
             path.write_text(content)
             path.chmod(0o644)
-            subprocess.run(["systemctl", "daemon-reload"], check=False)
-            subprocess.run(["systemctl", "enable", SERVICE_NAME], check=False)
+            subprocess.run(["systemctl", "daemon-reload"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.run(["systemctl", "enable", SERVICE_NAME], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             result = subprocess.run(["systemctl", "start", SERVICE_NAME], capture_output=True, text=True)
             if result.returncode == 0:
                 return True
@@ -178,15 +178,15 @@ def _try_system_service_install(content: str, executable: str) -> bool:
             )
             Path(tmp).unlink(missing_ok=True)
             if result.returncode == 0:
-                subprocess.run(["sudo", "systemctl", "daemon-reload"], check=False)
-                subprocess.run(["sudo", "systemctl", "enable", SERVICE_NAME], check=False)
+                subprocess.run(["sudo", "systemctl", "daemon-reload"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                subprocess.run(["sudo", "systemctl", "enable", SERVICE_NAME], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 start_res = subprocess.run(["sudo", "systemctl", "start", SERVICE_NAME], capture_output=True, text=True)
                 if start_res.returncode == 0:
                     return True
                 print(f"  ! sudo systemctl start failed: {start_res.stderr.strip() or start_res.stdout.strip()}")
                 # Clean up broken file to not leave failing service
                 subprocess.run(["sudo", "rm", "-f", str(path)], check=False)
-                subprocess.run(["sudo", "systemctl", "daemon-reload"], check=False)
+                subprocess.run(["sudo", "systemctl", "daemon-reload"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 return False
         except Exception as e:
             print(f"  ! sudo system service install failed: {e}")
@@ -202,12 +202,12 @@ def _install_user_service(content: str) -> bool:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content)
         path.chmod(0o644)
-        subprocess.run(["systemctl", "--user", "daemon-reload"], check=False)
-        subprocess.run(["systemctl", "--user", "enable", SERVICE_NAME], check=False)
+        subprocess.run(["systemctl", "--user", "daemon-reload"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(["systemctl", "--user", "enable", SERVICE_NAME], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         # Try to start (not critical, will start on next login/boot)
-        subprocess.run(["systemctl", "--user", "start", SERVICE_NAME], check=False)
+        subprocess.run(["systemctl", "--user", "start", SERVICE_NAME], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         if shutil.which("loginctl"):
-            subprocess.run(["loginctl", "enable-linger", os.environ.get("USER", "")], check=False)
+            subprocess.run(["loginctl", "enable-linger", os.environ.get("USER", "")], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         return True
     except Exception as e:
         print(f"  ! Failed to install user systemd service: {e}")
@@ -266,19 +266,19 @@ def uninstall_service() -> bool:
         try:
             if p.exists():
                 if prefer_user:
-                    subprocess.run(["systemctl", "--user", "disable", SERVICE_NAME], check=False)
-                    subprocess.run(["systemctl", "--user", "stop", SERVICE_NAME], check=False)
+                    subprocess.run(["systemctl", "--user", "disable", SERVICE_NAME], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    subprocess.run(["systemctl", "--user", "stop", SERVICE_NAME], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 else:
                     # Try with sudo if not root
                     try:
                         if os.geteuid() == 0:
-                            subprocess.run(["systemctl", "disable", SERVICE_NAME], check=False)
-                            subprocess.run(["systemctl", "stop", SERVICE_NAME], check=False)
+                            subprocess.run(["systemctl", "disable", SERVICE_NAME], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                            subprocess.run(["systemctl", "stop", SERVICE_NAME], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                         elif shutil.which("sudo"):
-                            subprocess.run(["sudo", "systemctl", "disable", SERVICE_NAME], check=False)
-                            subprocess.run(["sudo", "systemctl", "stop", SERVICE_NAME], check=False)
+                            subprocess.run(["sudo", "systemctl", "disable", SERVICE_NAME], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                            subprocess.run(["sudo", "systemctl", "stop", SERVICE_NAME], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                         else:
-                            subprocess.run(["systemctl", "disable", SERVICE_NAME], check=False)
+                            subprocess.run(["systemctl", "disable", SERVICE_NAME], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                     except Exception:
                         pass
                     # Remove file via sudo if needed
@@ -295,6 +295,8 @@ def uninstall_service() -> bool:
                                 subprocess.run(
                                     ["sudo", "systemctl", "daemon-reload"] if shutil.which("sudo") else ["systemctl", "daemon-reload"],
                                     check=False,
+                                    stdout=subprocess.DEVNULL,
+                                    stderr=subprocess.DEVNULL,
                                 )
                             except Exception:
                                 pass
@@ -302,9 +304,9 @@ def uninstall_service() -> bool:
 
                 p.unlink(missing_ok=True)
                 if prefer_user:
-                    subprocess.run(["systemctl", "--user", "daemon-reload"], check=False)
+                    subprocess.run(["systemctl", "--user", "daemon-reload"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 else:
-                    subprocess.run(["systemctl", "daemon-reload"], check=False)
+                    subprocess.run(["systemctl", "daemon-reload"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except Exception as e:
             print(f"  ! Failed to remove systemd service {p}: {e}")
             success = False
