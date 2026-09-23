@@ -113,3 +113,24 @@ def test_main_without_terminal_exits():
         with pytest.raises(SystemExit):
             cli.main()
     run_app.assert_not_called()
+
+
+def test_only_selected_dialog_button_is_highlighted():
+    class Styled(_Host):
+        CSS = KeepFocusedApp.CSS
+
+    async def run():
+        async with Styled(PasswordScreen(CFG, "why")).run_test() as pilot:
+            await pilot.pause()
+            ok, cancel = pilot.app.screen.query_one("#ok"), pilot.app.screen.query_one("#cancel")
+            assert ok.styles.background == cancel.styles.background  # typing: neither stands out
+            await pilot.press("down")
+            await pilot.pause()
+            assert ok.styles.background != cancel.styles.background
+            highlight = ok.styles.background
+            await pilot.press("left")
+            await pilot.pause()
+            assert cancel.styles.background == highlight
+            assert ok.styles.background != highlight
+
+    asyncio.run(run())

@@ -123,7 +123,7 @@ class ConfirmScreen(Dialog[bool]):
             yield Static(self._message, classes="dialog-body")
             with Horizontal(classes="buttons"):
                 yield Button("Cancel", id="no")
-                yield Button(self._confirm, id="yes", variant="error" if self._danger else "primary")
+                yield Button(self._confirm, id="yes")
 
     def on_mount(self) -> None:
         self.query_one("#yes", Button).focus()
@@ -150,7 +150,7 @@ class PasswordScreen(Dialog[bool]):
             yield Static("", classes="error")
             with Horizontal(classes="buttons"):
                 yield Button("Cancel", id="cancel")
-                yield Button("Unlock", id="ok", variant="primary")
+                yield Button("Unlock", id="ok")
 
     @on(Input.Submitted)
     @on(Button.Pressed, "#ok")
@@ -190,7 +190,7 @@ class NewPasswordScreen(Dialog["str | None"]):
             yield Static("", classes="error")
             with Horizontal(classes="buttons"):
                 yield Button("Cancel", id="cancel")
-                yield Button("Save password", id="ok", variant="primary")
+                yield Button("Save password", id="ok")
 
     def on_mount(self) -> None:
         self._update_meter("")
@@ -521,6 +521,9 @@ class KeepFocusedApp(App):
     .buttons { height: auto; align-horizontal: right; margin: 1 2 0 2; }
     .buttons Button { margin-left: 2; }
     Button:focus { text-style: bold; }
+    /* Dialog buttons look alike; only the selected one is coloured. */
+    .buttons Button:focus { background: $primary; color: $text; }
+    .dialog.-danger .buttons #yes:focus { background: $error; }
 
     ModalScreen { align: center middle; background: $background 60%; }
     .dialog {
