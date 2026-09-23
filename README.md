@@ -1,205 +1,59 @@
 # keep-focused
 
-Interactive CLI app for Debian that blocks distracting websites **system-wide** — works in **Chrome, Firefox, any browser** via `/etc/hosts`. Like `opencode` or `claude code`: install with one command, no `sudo`, no `pip`, then launch the app and stay focused.
+Block distracting websites **system-wide** on Debian — in every browser — behind a password you can't bypass on a whim.
 
-- **System-wide** — `127.0.0.1` + `::1` for each domain + `www.` plus **wildcard for any subdomain** (`andy.whatever.<blocked>` → blocked) via `dnsmasq` `address=/<blocked>/127.0.0.1` with `hosts` fallback
-- **Suggested sites** — `facebook.com`, `x.com`, `linkedin.com`, `spotify.com`, … (13 presets, arrow + Space to toggle, plus any custom domain)
-- **Strong password** — ≥20 characters, PBKDF2-HMAC-SHA256, required to unblock/disable/uninstall
-- **Autostart** — `systemd` service re-applies blocks on every boot (`keep-focused apply`)
+![keep-focused](docs/screenshot.png)
 
-## Install (no sudo, no pip) — like opencode
+- **Every browser** — blocks via `/etc/hosts`, plus a `dnsmasq` wildcard so any subdomain is blocked too
+- **Password-protected** — unblocking, pausing or uninstalling needs a ≥20-character password (PBKDF2-SHA256)
+- **Survives reboots** — a `systemd` service re-applies blocks on every boot
+- **No sudo or pip to install** — `sudo` is only asked for when `/etc/hosts` is edited
+
+## Install
 
 ```bash
-# One-liner (curl | bash) — recommended
 curl -fsSL https://raw.githubusercontent.com/xweinp/keep-focused/main/install.sh | bash
-
-# Or from a clone
-git clone https://github.com/xweinp/keep-focused
-cd keep-focused
-./install.sh
 ```
 
-What it does:
-- Checks `python3 >= 3.9` (already on Debian)
-- Copies the app to `~/.local/share/keep-focused` (no root, no pip, no apt)
-- Creates `~/.local/bin/keep-focused` wrapper → `python3 -m keep_focused` (`PYTHONPATH=~/.local/share/keep-focused`)
-- Adds `~/.local/bin` to `PATH` if needed and prints next steps
+Installs to `~/.local/share/keep-focused` with a launcher at `~/.local/bin/keep-focused`. Needs `python3 >= 3.9`.
 
-No `sudo apt install python3-pip`, no `pip install`, no root.
-
-## Launch the app
+## Use
 
 ```bash
 keep-focused
-# if PATH not yet reloaded:
-~/.local/bin/keep-focused
-# or
-export PATH="$HOME/.local/bin:$PATH" && keep-focused
 ```
 
-You get a full-screen app (built with [Textual](https://textual.textualize.io), mouse + keyboard):
+The first run walks you through picking sites and setting a password. After that: `↑↓` move, `←→` switch panel, `Enter` choose, `Esc` back/quit. Adding sites never needs the password.
 
-```
- ◉ keep-focused  stay sharp                                                    v1.0.0
+Without [Textual](https://textual.textualize.io) installed, a simpler line-based menu is used.
 
- ╭──────────────────────╮ ╭──────────────────────────╮ ╭────────────────────────────╮
- │ ● Blocking on        │ │ 4 sites blocked          │ │ ⟳ Autostart on             │
- │ in every browser     │ │ plus their www. variants │ │ re-applied on every login  │
- ╰──────────────────────╯ ╰──────────────────────────╯ ╰────────────────────────────╯
- ╭ Blocked sites ─────────────────────────────╮ ╭ Actions ─────────────────────────╮
- │ ✕ facebook.com   + www                     │ │  +   Block more sites            │
- │ ✕ linkedin.com   + www                     │ │  −   Unblock sites               │
- │ ✕ spotify.com    + www                     │ │  ‖   Pause / resume blocking     │
- │ ✕ x.com          + www                     │ │  ↺   Re-apply blocks             │
- │                                            │ │  *   Change password             │
- ╰───────────────────────────── Enter unblocks ╯ ╰──────────────────────────────────╯
-  ↑↓ move   ←→ switch panel   Enter choose   Esc quit
-```
+### Commands
 
-Keys: only arrows, **Enter** and **Esc**. `↑↓` move, `←→` switch between the sites and actions panels, Enter chooses (on a blocked site it unblocks it), Esc goes back or quits. When sudo needs your password the app steps aside, shows the normal sudo prompt, then comes back.
-
-Without Textual, or when not run in a terminal, the older line-based menu is used instead.
-
-**First run** goes to **Setup**:
-1. Checkbox list of 13 suggested sites (defaults `facebook.com`, `x.com`, `linkedin.com`, `spotify.com` pre-checked). Enter ticks or unticks a site; choose **＋ Add another website…** to type any other site (comma-separated works); choose **✓ Save** when done, Esc cancels.
-2. Set a password **≥20 chars** (typed twice, with a length meter). You need it to unblock or pause. Adding sites never needs it.
-3. The app then writes `~/.config/keep-focused/config.json` (0600) + patches `/etc/hosts` with `# BEGIN keep-focused` (uses `sudo` only here, prompts for your sudo password if needed) + writes `/etc/dnsmasq.d/keep-focused.conf` wildcard (`address=/<blocked>/127.0.0.1` for any `whatever.<blocked>`) + enables `systemd` service so blocks persist after reboot.
-
-All browsers now show connection errors for blocked sites.
-
-## How it works
-
-- **Wildcard blocking**: any `whatever.<blocked>` is blocked (suffix dot check, not infix — `notspotify.com` not blocked by `spotify.com`, via `keep_focused/hosts.py:49` `is_blocked_host`). Achieved via `dnsmasq` wildcard (`keep_focused/dnsmasq.py:1` `address=/<blocked>/127.0.0.1` + `::1` covers any depth like `a.b.c.<blocked>`) with `hosts` fallback (`# BEGIN keep-focused` exact `bare`+`www.`). Tailscale `resolv.conf` handled via fallback.
-
-- **Hosts file** (fallback): inserts between markers:
-
-  ```
-  # BEGIN keep-focused
-  127.0.0.1 facebook.com
-  ::1 facebook.com
-  127.0.0.1 www.facebook.com
-  ::1 www.facebook.com
-  # END keep-focused
-  ```
-
-  Removal preserves other entries. Handles `https://`, `www.`, ports, paths — normalized to bare domain via `normalize_domain()` in `keep_focused/hosts.py:22`.
-
-- **dnsmasq wildcard**: when `dnsmasq` is available, `keep_focused/hosts.py:230` `apply_block` also writes `/etc/dnsmasq.d/keep-focused.conf` and restarts `dnsmasq` (sudo/pkexec). Test override via `$KEEP_FOCUSED_DNSMASQ`.
-
-- **Config**: `~/.config/keep-focused/config.json` (or `$XDG_CONFIG_HOME`, fallback to `/etc/keep-focused/config.json` for legacy `sudo` setups). Override for tests via `$KEEP_FOCUSED_CONFIG`.
-
-  ```json
-  {
-    "password_hash": "...",
-    "salt": "...",
-    "blocked_sites": ["facebook.com", "x.com"],
-    "enabled": true
-  }
-  ```
-
-- **Autostart**: tries **system service** (`/etc/systemd/system/keep-focused.service` via `sudo tee` if available), falls back to **user service** (`~/.config/systemd/user/keep-focused.service` + `systemctl --user enable`). Both run `keep-focused apply` on boot; logic in `keep_focused/systemd.py:1`.
-
-- **Privileges**: installer never needs `sudo`. Only **runtime** `apply_block()` in `keep_focused/hosts.py:147` / `keep_focused/dnsmasq.py:39` uses `sudo tee`/`pkexec` if `/etc/hosts`/`/etc/dnsmasq.d` is not writable, so you see the normal sudo prompt inside the app.
-
-## Update
-
-```bash
-keep-focused update          # self-update, no sudo/pip (like opencode)
-keep-focused update --check  # check only
-keep-focused update --force  # force reinstall even if up to date
-```
-
-Or just `keep-focused` → `Update (check & install latest)` in the menu.
-
-**If you installed before `update` existed** (old version has no `keep-focused update`), just re-run the installer – it’s idempotent and preserves your config/blocks:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/xweinp/keep-focused/main/install.sh | bash
-# or if you cloned:
-git pull && ./install.sh
-```
-
-After that `keep-focused update` will be available.
-
-## Scripting (optional, no TUI)
-
-The app also supports commands for automation (password required where noted):
+For scripting. Everything except `status`, `list` and `update` asks for the password.
 
 ```bash
 keep-focused status
-keep-focused block youtube.com reddit.com              # any suggested
-keep-focused block myfavouritegame.com example.org     # any custom website
-keep-focused block andy.whatever.someone.invents.example.com  # any depth, wildcard
+keep-focused block youtube.com reddit.com
 keep-focused unblock spotify.com
-keep-focused disable
-keep-focused enable
+keep-focused disable | enable
 keep-focused passwd
-keep-focused update --check
+keep-focused update [--check|--force]
 keep-focused uninstall
-keep-focused apply   # internal – called by systemd on boot, no password
 ```
 
-But the primary way is just `keep-focused` → interactive app.
+## How it works
 
-## Advanced: pip install (legacy)
+- `/etc/hosts` gets a `# BEGIN keep-focused` … `# END keep-focused` block mapping each site and its `www.` to `127.0.0.1` / `::1`.
+- If `dnsmasq` is present, `/etc/dnsmasq.d/keep-focused.conf` blocks every subdomain (`a.b.site.com`) but not look-alikes (`notsite.com`).
+- Config lives in `~/.config/keep-focused/config.json` (mode 0600).
 
-If you prefer pip:
+## Development
 
 ```bash
-pip install .   # or pipx
-keep-focused    # still launches the TUI
+./run-tests.sh
 ```
 
-## Uninstall
-
-From the app: `keep-focused` → `Update/Uninstall` → `Uninstall` (requires password) — cleans hosts, systemd, config.
-
-Or manually:
-
-```bash
-rm -rf ~/.local/share/keep-focused ~/.local/bin/keep-focused
-rm -rf ~/.config/keep-focused
-# if you had a system install:
-sudo rm -f /etc/systemd/system/keep-focused.service /etc/keep-focused/config.json
-systemctl --user disable keep-focused.service 2>/dev/null; sudo systemctl disable keep-focused.service 2>/dev/null
-```
-
-## Development / testing
-
-Only stdlib (`argparse`, `hashlib`, `getpass`, `pathlib`, `curses`-free). No deps.
-
-Run the automated test suite (49 tests, no manual steps):
-
-```bash
-./run-tests.sh          # tries pytest, falls back to stdlib runner
-# or
-python3 tests/run_tests.py
-# or with pytest if you have it
-pytest -q
-python3 -m pytest -q
-```
-
-Mock hosts/config/service for manual checks:
-
-```bash
-KEEP_FOCUSED_HOSTS=/tmp/hosts KEEP_FOCUSED_CONFIG=/tmp/cfg.json KEEP_FOCUSED_SERVICE=/tmp/svc python3 -m keep_focused.cli status
-KEEP_FOCUSED_HOSTS=/tmp/hosts KEEP_FOCUSED_CONFIG=/tmp/cfg.json python3 -m keep_focused.tui  # runs TUI with mocks
-```
-
-Tests cover:
-- `tests/test_auth.py` – 20-char password, PBKDF2 + persistence roundtrip
-- `tests/test_hosts.py` – normalize/expand, hosts block/clear, preserve other content, suffix dot wildcard (`is_blocked_host` not infix, any depth, custom domains)
-- `tests/test_config.py` – save/load, XDG isolation
-- `tests/test_cli.py` – setup/block/unblock/enable/disable/passwd/uninstall require password, custom arbitrary sites
-- `tests/test_tui.py` – arrow vs legacy menu, toggle requires password both ways
-- `tests/test_systemd.py` – user vs system service, Environment for HOME-independent ExecStart
-- `tests/test_update.py` – self-update via install.sh/git, `keep-focused update --check`
-- `tests/test_lock.py` / `test_password_enforcement.py` – chattr best-effort, no bypass without password
-- `tests/test_hosts.py` `is_blocked_host` + `dnsmasq` wildcard for any `whatever.<blocked>`
-
-## Suggested sites + any custom
-
-`facebook.com`, `x.com`, `twitter.com`, `linkedin.com`, `spotify.com`, `instagram.com`, `youtube.com`, `reddit.com`, `tiktok.com`, `netflix.com`, `twitch.tv`, `discord.com`, `threads.net` — see `keep_focused/__init__.py:6` — **or any custom** via `c` in TUI or `keep-focused block myfavouritegame.com` (wildcard for any `whatever.<blocked>`).
+Override paths for safe manual testing with `KEEP_FOCUSED_HOSTS`, `KEEP_FOCUSED_CONFIG`, `KEEP_FOCUSED_SERVICE` and `KEEP_FOCUSED_DNSMASQ`.
 
 ## License
 
